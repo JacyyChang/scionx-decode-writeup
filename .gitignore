@@ -1,0 +1,24 @@
+# --- Editor / IDE ---
+.vscode/
+.idea/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Claude Code working notes (not for publishing) ---
+CLAUDE.md
+
+# NOTE: Figure/*.png and Data/*.ogg are intentionally kept (tracked),
+# they are the example outputs and the shared recording.

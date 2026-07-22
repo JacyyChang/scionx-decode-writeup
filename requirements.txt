@@ -1,0 +1,5 @@
+# SCIONX signal-decoding diagnostics — runtime dependencies.
+# GNU Radio is NOT required. Install with:  pip install -r requirements.txt
+numpy
+matplotlib
+soundfile

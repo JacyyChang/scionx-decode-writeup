@@ -1,0 +1,154 @@
+# 01 — Frame detection: auto-detect packet starts + segment the structure
+
+## What this is about
+
+The raw recording is one continuous stream of audio hiding a handful of
+frames inside it. First we need to automatically find "where in the signal
+is there a packet", then cut each packet into its flags (0x7E)/callsign
+address/data/zero-run (padding)/FCS (CRC) segments.
+
+`01_frame_detection.py` does two things:
+
+1. **Detection**: builds an NRZ template from the known header + callsign
+   address (4x flag + 14 bytes of address = 144 bits, fixed protocol content
+   unaffected by telemetry), and runs a normalized cross-correlation against
+   `restore_baseline`'s `y_comp_final` output, locating positions where the
+   correlation coefficient is far above the noise floor -- these are the
+   frame starts. It doesn't need to know how many frames there are ahead of
+   time, and doesn't hardcode any sample position.
+2. **Segmentation and labeling**: for each detected frame, does an HDLC
+   destuff bit by bit and **records which original recording sample each
+   output bit corresponds to**, then cross-references `../REFERENCE_FRAME.md`'s
+   known field boundaries to precisely convert the whole structure back into
+   sample indices, color-code it on the plot, and label each boundary with
+   "this is payload byte N".
+
+## Algorithm
+
+### Notation
+
+| Symbol | Meaning |
+|---|---|
+| $b[i]\in\{0,1\}$ | the header's raw bit sequence (bit $i$, $i=0,\dots,143$) |
+| $s[i]\in\{-1,+1\}$ | the NRZ polarity converted from $b[i]$ |
+| $\mathrm{SPS}$ | samples per symbol (=5) |
+| $t[k]$ | the upsampled matching template, $k=0,\dots,L-1$ |
+| $L$ | template length (samples), $L=144\times\mathrm{SPS}=720$ |
+| $y[n]$ | `restore_baseline`'s `y_comp_final` output (sample $n$) |
+| $y[n{:}n{+}L]$ | the signal window of length $L$ starting at position $n$ |
+| $R[n]$ | the normalized cross-correlation coefficient at position $n$, range $[-1,1]$ |
+| $\sigma_R$ | the standard deviation of $R$ over the whole signal (the noise-floor scale) |
+| $z[n]$ | the z-score of $R[n]$ |
+| $Z_{\text{th}}$ | the z-score detection threshold (default 12) |
+| $\mathcal{C}$ | the set of candidate positions passing the threshold |
+| $S$ | the final set of retained frame starts |
+| $G_{\min}$ | the minimum sample gap between two retained starts (default 100000) |
+
+### 1. Build the matching template
+
+Convert the header's fixed content (4 0x7E flags + 14 bytes of callsign
+address = 32+112 = 144 bits, fixed by protocol, unaffected by telemetry)
+into NRZ polarity:
+
+$$
+s[i] = 2b[i] - 1 ,\qquad i = 0,\dots,143
+$$
+
+then upsample by repeating each symbol across $\mathrm{SPS}$ samples
+(repetition instead of interpolation):
+
+$$
+t[k] = s\!\left(\left\lfloor \frac{k}{\mathrm{SPS}} \right\rfloor\right),
+\qquad k = 0,\dots,L-1,\quad L = 144 \times \mathrm{SPS} = 720
+$$
+
+### 2. Normalized cross-correlation
+
+Scan the signal $y$ point by point, computing the normalized cross-correlation
+coefficient between the template $t$ and the signal window $y[n{:}n{+}L]$ at
+each position $n$:
+
+$$
+R[n] = \frac{\displaystyle\sum_{k=0}^{L-1} t[k]\,y[n+k]}
+             {\lVert t \rVert \, \lVert y[n{:}n{+}L] \rVert},
+\qquad
+\lVert t \rVert = \sqrt{\sum_{k=0}^{L-1} t[k]^2},\quad
+\lVert y[n{:}n{+}L] \rVert = \sqrt{\sum_{k=0}^{L-1} y[n+k]^2}
+$$
+
+$R[n]$ ranges roughly over $[-1,1]$: the more the window resembles the
+template's waveform, the closer $R[n]$ gets to 1. In the implementation, the
+numerator (a dot product) is computed for all $n$ in one call to
+`np.correlate(y, t, mode="valid")`; the denominator's window norm uses the
+prefix sum of $y^2$, $\mathrm{csum}[m]=\sum_{j<m}y[j]^2$, to compute the
+sliding window energy
+$\lVert y[n{:}n{+}L]\rVert^2 = \mathrm{csum}[n{+}L]-\mathrm{csum}[n]$ --
+neither needs a per-point loop.
+
+### 3. Filter correlation peaks by z-score
+
+$$
+z[n] = \frac{R[n]}{\sigma_R}, \qquad \sigma_R = \mathrm{std}(R)
+$$
+
+Real frame starts stand out clearly in $z$ (measured at $z\approx12\sim13$
+on `cut_first3.ogg`), while the noise floor mostly stays at $z<5$ -- the two
+are well separated. Take the positions passing the threshold as the
+candidate set:
+
+$$
+\mathcal{C} = \{\, n \mid z[n] > Z_{\text{th}} \,\}
+$$
+
+### 4. Deduplicate, sort, and number
+
+Sort $\mathcal{C}$ by $z[n]$ descending, and greedily add candidates in that
+order into the start set $S$ (initially empty):
+
+$$
+n \in \mathcal{C}\ (\text{sorted by } z[n] \text{ descending}):\quad
+n \to S \iff \min_{s \in S} |n - s| > G_{\min}
+$$
+
+$G_{\min}$ is much smaller than the actual frame spacing (about 561000
+samples), which avoids a single peak's neighboring samples being counted as
+several separate candidates. Finally, sort $S$ by sample position ascending
+and number them frame#1, frame#2, frame#3, ...
+
+## Scripts
+
+| Script | Output |
+|---|---|
+| `01_frame_detection.py` | Automatically detects every frame in the recording, saving one figure per frame: `Figure/01_frame1.png`, `Figure/01_frame2.png`, `Figure/01_frame3.png`... (numbered in order of sample position) |
+
+Verified on `Data/cut_first3.ogg` (known to contain 3 frames): detection
+lands exactly on the three known starts 235719 / 796789 / 1357824, with
+z-scores around 12-13, far above the noise floor (z<5), and no false
+positives.
+
+## Key findings
+
+- **Frame detection is quite accurate**: the 3 starts caught by the z-score
+  threshold match the known 235719/796789/1357824 exactly, with no misses or
+  false positives.
+- **Visually, the structural segmentation (header/data/zero-run/FCS
+  boundaries) is also quite accurate** -- the overlaid color coding lines up
+  with the raw waveform. But this only means "the position was cut
+  correctly", not "the bit content that was cut out is correct": the bit
+  error rate of the data segments (real telemetry content) is still high
+  (15-43%), which is the problem `03_data_segment_processing/` is meant to
+  address.
+
+## How to run
+
+```bash
+pip install numpy matplotlib soundfile
+python 01_frame_detection.py
+```
+
+Needs `../scionx/` (`audio_io.py` / `baseline.py` / `hdlc.py`) and
+`../_style.py`, which live one directory up -- the script finds them
+automatically. Running it saves one new PNG per detected frame into this
+folder's `Figure/` subfolder, and prints the detected frame list (sample
+start + z-score) plus a "payload byte index -> sample index" lookup table
+for each frame to the terminal.

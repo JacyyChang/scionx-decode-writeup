@@ -1,0 +1,122 @@
+# SCIONX Signal Decoding Roadblock — a Writeup for the Community
+
+## Background
+
+This is a **AFSK/1200bps** audio recording (`.ogg`) of a CubeSat
+(SCIONX/RANGE A) downlink, downloaded from the
+[SatNOGS Network](https://network.satnogs.org/) (a crowd-sourced open
+satellite ground station network), from which we need to decode
+**HDLC/AX.25 frames**. The recording is known to contain 2-3 complete frames
+(one of which has had its header verified against a ground-test reference
+packet, see `REFERENCE_FRAME.md`), but the pipeline currently stalls at the
+CRC check: **0 frames pass CRC**.
+
+## Method
+
+The overall processing is split into three steps:
+
+1. **Frame detection**: locate the packet's position, then cut the whole
+   signal into header/data/zero-run/FCS segments.
+2. **Zero-run segments**: process the padding-region data and flag the
+   isolated "1"s inside it.
+3. **Data segments**: process the actual telemetry-content data, apply a
+   threshold, and mark the decision line.
+
+We've already run a fairly exhaustive round of step-by-step diagnostics,
+ruling out several hypotheses (baseline curvature, timing/sampling phase,
+AGC gain tracking, ...), but still haven't found a fix that actually gets a
+frame past CRC. This is the most critical part of that diagnostic work,
+split into three independent, re-runnable folders, in the hope that the
+community can offer a different angle.
+
+The fixed offset threshold currently being tried in
+`03_data_segment_processing/` (calibrated from known header bits) only goes
+as far as "draw a decision line for visual inspection" -- it hasn't actually
+been verified to get a frame past CRC (the data segments' content changes
+frame to frame, so there's no reliable ground truth to compute a bit error
+rate against).
+
+**Questions for the community**:
+- What else could be done to improve the decision method for the data segments?
+- Is there a better overall approach to this signal-processing pipeline?
+
+## The three diagnostic folders
+
+| Folder | Topic | Original naming |
+|---|---|---|
+| [`01_frame_detection/`](01_frame_detection/) | Automatically detects packet starts (normalized cross-correlation), then cuts the whole signal into header/data/zero-run/FCS segments; outputs one figure per frame in the recording | Phase 1e / 1e2 |
+| [`02_zero_run_baseline/`](02_zero_run_baseline/) | After auto-detecting each frame, uses decision-directed baseline restoration + two decision methods to flag the isolated "1"s inside the zero-run segments; outputs one figure per frame | Phase 7 |
+| [`03_data_segment_processing/`](03_data_segment_processing/) | After auto-detecting each frame, calibrates a fixed offset threshold from known header bits: shows the asymmetry itself (03a) + applies the decision line (03b); outputs one figure per frame | Phase 9 / 10 |
+
+## How to run
+
+Only three packages are needed -- **GNU Radio is not required**:
+
+```bash
+pip install numpy matplotlib soundfile
+cd 01_frame_detection    # or 02_.../ 03_.../
+python 01_frame_detection.py    # swap in whichever script you want to run
+```
+
+Every script is independently runnable -- it reads `Data/cut_first3.ogg`
+directly and recomputes everything itself, with no dependency on any other
+script's intermediate output. Running one will save a new PNG in
+**whatever folder you're currently in** (overwriting/adding a file with the
+same name) and print the measured numbers to the terminal.
+
+The shared code (the `scionx/` package, `_style.py`'s plotting setup) lives
+in this folder's (`Share/`) root; scripts in all three category folders find
+it automatically, with no need to copy it separately.
+
+## Other reference files
+
+- [`REFERENCE_FRAME.md`](REFERENCE_FRAME.md): the ground-truth packet hex
+  dump from the same satellite's ground test. The first 16 bytes
+  (address+control+PID) and the CRC should be identical across any packet
+  and can be used as a hard alignment/verification baseline; the Info field
+  (telemetry content), however, **differs from packet to packet** and can't
+  be used as ground truth for a data segment's bit errors -- this caveat is
+  repeated in each category's own README as well.
+
+## Current results
+
+- **Frame segmentation/detection is quite successful**: `01_frame_detection/`'s
+  normalized cross-correlation method lands exactly on the 3 known frame
+  starts (z-score 12-13, far above the noise floor's z<5, no false
+  positives), and after overlaying the plot, the header/data/zero-run/FCS
+  boundary labels all line up with the raw waveform -- the segmentation step
+  itself isn't the problem.
+- **Zero-run segments: combined with the frame's internal structure, a human
+  can filter out the misdetections**: `02_zero_run_baseline/` shows that
+  using the current fixed threshold alone (Method 1), the zero-run segments'
+  false-positive-as-1 rate is only 0.8-2.5%, and these misdetected points sit
+  at discrete, sparse positions. Since these two segments should theoretically
+  be all zero, using that known structure as a baseline, together with the
+  handful of "decided as 1" candidate points, there's a real chance to check
+  each one by hand and filter out the incorrect bits.
+- **Data segment data is still quite messy**: `03_data_segment_processing/`
+  shows that even after applying the header-calibrated fixed offset
+  threshold, about 2-7% of the decisions within data1/data2 still change when
+  the threshold changes, and the asymmetry's magnitude keeps drifting slowly
+  with position within the segment (03a's "invisible curve"). The most
+  workable direction right now seems to be: first identify the bits sitting
+  "close to the decision line (threshold)" -- these are the most
+  error-prone, most suspicious candidates -- then use an actually-decoded
+  frame (e.g. the parts with known correct answers, like header/address/CRC)
+  as a baseline to manually check and filter out the errors caused by these
+  borderline cases.
+
+## Possible future updates
+
+- **Switch to GNU Radio's built-in `symbol_sync` to find bits**: right now
+  every script in `Share/` samples the signal directly at a fixed rate and
+  fixed phase (`PHASE`), without doing real symbol timing recovery. Switching
+  to GNU Radio's `symbol_sync` (Gardner TED and similar algorithms) to
+  re-track the sampling instant could fix whatever error the current
+  fixed-phase sampling might be introducing.
+- **Use frame information to confirm/correct bit correctness**: right now
+  every bit is decided independently, using only a single fixed threshold;
+  this could be changed to use known structure (the parts of the
+  protocol -- header/address/CRC -- that are fixed and have known answers)
+  as anchors, cross-validating or error-correcting the data segments instead
+  of deciding each bit in isolation.
