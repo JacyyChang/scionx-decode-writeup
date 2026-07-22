@@ -66,7 +66,8 @@ v_1)]$, and take the one with the fewest errors as the best fixed offset
 threshold:
 
 $$
-\theta^* = \arg\min_{\theta}\ \Big(\ \#\{x\in v_1 \mid x \le \theta\}\ +\ \#\{x\in v_0 \mid x > \theta\}\ \Big)
+\theta^* = \arg\min_{\theta}\ \Big(\ \bigl|\{x\in v_1 \mid x \le \theta\}\bigr|\ +\ \bigl|\{x\in v_0 \mid x > \theta
+\}\bigr|\ \Big)
 $$
 
 This threshold is re-calibrated from this frame's **own** header, not
