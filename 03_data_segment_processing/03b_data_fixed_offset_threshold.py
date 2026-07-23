@@ -17,7 +17,9 @@ README). Once each frame's start is found:
   2. Use the "bypass method" (sample the raw y at a fixed rate and destuff it
      directly, without going through restore_baseline) to track each output
      bit's original sample index, and compute this frame's own exact
-     data1/data2 sample ranges.
+     data1/data2 sample ranges. data2's range is extended past its natural
+     end through zero-run2 and FCS (see GNURADIO_MIGRATION.md), with the
+     internal boundaries marked on the plot.
   3. Apply step 1's threshold to data1/data2 unchanged (assuming the
      asymmetry is a fixed property of the channel/demodulator, not dependent
      on content, and shared across the whole frame), overlaying the decision
@@ -171,7 +173,19 @@ def calibrate_offset_threshold(y, start):
 def get_data_segments(y, start):
     """Bypass method (sample the raw y at a fixed rate and destuff directly,
     without going through restore_baseline) to compute this frame's exact
-    data1/data2 sample ranges. Returns [(name, s0, s1), ...]."""
+    data1/data2 sample ranges.
+
+    data2's range is extended past its natural end (payload byte 206, where
+    zero-run2 begins) all the way through FCS (byte [272,274)), so the
+    second panel shows the header-calibrated threshold applied across
+    zero-run2 and the CRC too -- see GNURADIO_MIGRATION.md: FCS rides along
+    with the data segments rather than getting its own pass-through, since
+    its bits look like ordinary signal content, not the all-zero padding
+    zero-run2 is. `markers` records where those internal boundaries fall
+    (empty for data1) so the caller can annotate them.
+
+    Returns [(name, s0, s1, markers), ...] for data1 and extended data2,
+    where markers is a list of (label, sample_index)."""
     span_j1 = int(SEARCH_SAMPLES / SPS)
     idx_all = start + SPS * np.arange(0, span_j1) + PHASE
     ok = idx_all < y.size
@@ -179,6 +193,10 @@ def get_data_segments(y, start):
     body_bits_raw = (y[idx_all[32:]] > 0).astype(np.uint8)   # skip the leading 4 flags
     body_idx_raw = idx_all[32:]
     body_bits, body_sample_idx = destuff_with_map(body_bits_raw, body_idx_raw)
+
+    def sample_at_byte(byte_idx):
+        bit = min(byte_idx * 8, body_sample_idx.size - 1)
+        return int(body_sample_idx[bit])
 
     zero_runs = find_zero_runs(REF)
     segments = [("address", 0, 14)]
@@ -192,6 +210,7 @@ def get_data_segments(y, start):
         seg_id += 1
     if prev < 272:
         segments.append((f"data{seg_id}", prev, 272))
+    segments.append(("FCS", 272, 274))   # 2-byte CRC-16/X.25, appended after the 272-byte payload
 
     data_segs = []
     for label, b0, b1 in segments:
@@ -202,8 +221,23 @@ def get_data_segments(y, start):
             continue
         s0 = int(body_sample_idx[bit0])
         s1 = int(body_sample_idx[min(bit1, body_sample_idx.size) - 1]) + SPS
-        data_segs.append((label, s0, s1))
-    return data_segs[:2]   # data1, data2
+        data_segs.append([label, s0, s1, []])
+    data_segs = data_segs[:2]   # data1, data2
+
+    if len(data_segs) >= 2:
+        zero_run2 = next((seg for seg in segments if seg[0] == "zero-run2"), None)
+        fcs = segments[-1]   # ("FCS", 272, 274)
+        markers = []
+        if zero_run2 is not None:
+            markers.append(("zero-run2 starts", sample_at_byte(zero_run2[1])))
+        markers.append(("FCS starts", sample_at_byte(fcs[1])))
+        bit1_fcs = min(fcs[2] * 8, body_sample_idx.size)
+        s1_ext = int(body_sample_idx[bit1_fcs - 1]) + SPS
+        data_segs[1][0] = f"{data_segs[1][0]}+zero-run2+FCS"
+        data_segs[1][2] = s1_ext
+        data_segs[1][3] = markers
+
+    return [tuple(seg) for seg in data_segs]
 
 
 def plot_frame(plt, y, start, frame_no, z_score, data_segs, offset_thr, hdr_err):
@@ -219,7 +253,7 @@ def plot_frame(plt, y, start, frame_no, z_score, data_segs, offset_thr, hdr_err)
           f"  -> band = [{offset_thr-margin:+.4f}, {offset_thr+margin:+.4f}]")
 
     fig, axes = plt.subplots(2, 1, figsize=(16, 9))
-    for ax, (name, s0, s1) in zip(axes, data_segs):
+    for ax, (name, s0, s1, markers) in zip(axes, data_segs):
         j0 = round((s0 - start - PHASE) / SPS)
         j1 = round((s1 - start - PHASE) / SPS)
         idx_sym = start + SPS * np.arange(j0, j1) + PHASE
@@ -251,6 +285,17 @@ def plot_frame(plt, y, start, frame_no, z_score, data_segs, offset_thr, hdr_err)
                       edgecolors="red", linewidths=1.5, zorder=5,
                       label=f"near decision line, below or above ({near.sum()} total, "
                             f"{100*near.sum()/(j1-j0):.1f}%) -- most error-prone")
+
+        ylo, yhi = ax.get_ylim()
+        for label, s_marker in markers:
+            ax.axvline(s_marker, color="k", lw=1.0, ls=":", alpha=0.6)
+            near_right_edge = (s_marker - s0) > 0.85 * (s1 - s0)
+            dx, ha = (-4, "right") if near_right_edge else (4, "left")
+            # anchored at the bottom, not the top -- the legend sits upper-right,
+            # and markers can land close enough to the right edge to collide with it
+            ax.annotate(label, xy=(s_marker, ylo), xytext=(dx, 4),
+                       textcoords="offset points", fontsize=7.5, ha=ha, va="bottom",
+                       bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="gray", alpha=0.85))
 
         ax.set_xlim(s0, s1)
         ax.set_xlabel("sample index")

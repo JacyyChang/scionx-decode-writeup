@@ -13,7 +13,7 @@ the header to data1/data2, presented via two scripts:
 | Script | Content | Output |
 |---|---|---|
 | `03a_data_asymmetry_check.py` | Shows the asymmetry itself: per-point color coding + each group's local moving average, to see whether the asymmetry drifts slowly with position | `Figure/03a_frame1.png`, `03a_frame2.png`, `03a_frame3.png` |
-| `03b_data_fixed_offset_threshold.py` | Applies the calibrated fixed offset threshold to data1/data2, overlaying the decision line, and rings every symbol sitting close to that line -- below **or** above it | `Figure/03b_frame1.png`, `03b_frame2.png`, `03b_frame3.png` |
+| `03b_data_fixed_offset_threshold.py` | Applies the calibrated fixed offset threshold to data1/data2, overlaying the decision line, and rings every symbol sitting close to that line -- below **or** above it. The second panel's range is extended past data2 through zero-run2 and FCS, with those boundaries marked | `Figure/03b_frame1.png`, `03b_frame2.png`, `03b_frame3.png` |
 
 Both scripts' frame detection uses the same method as
 [`01_frame_detection/`](../01_frame_detection/) (normalized
@@ -84,6 +84,12 @@ packet's (`../REFERENCE_FRAME.md`) known field boundaries (data1 = payload
 byte `[14,75)`, data2 = payload byte `[158,206)`) and convert them back into
 sample ranges, giving this frame's own exact `data1`/`data2` sample ranges.
 
+`03b` extends data2's range one step further, through zero-run2
+(`[206,272)`) and FCS (`[272,274)`, the 2-byte CRC-16/X.25 appended after the
+272-byte payload) -- so its second panel plots data2+zero-run2+FCS as one
+continuous span, with the zero-run2/FCS boundaries marked as vertical dotted
+lines. `03a` is unaffected and still plots data2 alone.
+
 ### 4a. Show the asymmetry (`03a`)
 
 Use $\theta^*$ to split each symbol in data1/data2 into "decided as 1" /
@@ -121,6 +127,11 @@ error-prone candidates. No bit error rate is computed -- the data segments'
 content changes frame to frame, so there's no reliable ground truth to
 compare against.
 
+The second panel's extended range (data2+zero-run2+FCS) applies $\theta^*$
+unchanged across all three -- i.e. it shows what the same header-calibrated
+threshold does to the all-zero padding and the CRC, not just the telemetry
+`03a` was built around.
+
 ## Key findings
 
 - **The asymmetry reproduces across all three frames**, though the
@@ -147,6 +158,13 @@ compare against.
   comparison at all. These are the natural starting point for the "check
   against an actually-decoded frame" direction in the main README, since
   they're low-confidence independent of which exact threshold is correct.
+- **Extending the second panel through zero-run2+FCS roughly doubles the
+  near-decision-line fraction** (from ~2-7% over data2 alone to ~10-14% over
+  data2+zero-run2+FCS, across the three frames) -- most of the added
+  low-confidence symbols fall inside zero-run2, consistent with
+  `02_zero_run_baseline/`'s finding that the all-zero padding isn't cleanly
+  resolved either (its "isolated 1s" are exactly this same low-confidence
+  population, seen from the other side).
 
 ## How to run
 
