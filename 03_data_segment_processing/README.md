@@ -130,7 +130,12 @@ compare against.
 The second panel's extended range (data2+zero-run2+FCS) applies $\theta^*$
 unchanged across all three -- i.e. it shows what the same header-calibrated
 threshold does to the all-zero padding and the CRC, not just the telemetry
-`03a` was built around.
+`03a` was built around. zero-run2 is shaded gray (it's expected all-zero,
+not the segment in question) and FCS is tinted cyan, so it's visually
+obvious whether the CRC bits themselves have any low-confidence symbols,
+without zero-run2's much larger candidate count drowning them out. The
+terminal output also prints the near-decision-line count restricted to just
+the FCS sub-range.
 
 ## Key findings
 
@@ -165,6 +170,12 @@ threshold does to the all-zero padding and the CRC, not just the telemetry
   `02_zero_run_baseline/`'s finding that the all-zero padding isn't cleanly
   resolved either (its "isolated 1s" are exactly this same low-confidence
   population, seen from the other side).
+- **FCS itself looks clean**: of the 16 CRC bits, 0/16 (frame#2), 2/16
+  (frame#1), 2/16 (frame#3) land within the near-decision-line band -- a
+  rate in the same ballpark as data1/data2, not visibly worse. The CRC
+  bits' low-confidence count doesn't stand out from the rest of the frame,
+  which argues against "the CRC itself is unusually hard to slice" as an
+  explanation for the 0-frames-pass-CRC result.
 
 ## How to run
 

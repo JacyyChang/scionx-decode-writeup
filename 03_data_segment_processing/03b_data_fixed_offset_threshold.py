@@ -267,7 +267,23 @@ def plot_frame(plt, y, start, frame_no, z_score, data_segs, offset_thr, hdr_err)
               f"({100*n_diff/(j1-j0):.1f}%)  |  near decision line (|y-threshold|<={margin:.3f}) = "
               f"{near.sum()} ({100*near.sum()/(j1-j0):.1f}%)")
 
+        marker_pos = dict(markers)
+        zr2_start = marker_pos.get("zero-run2 starts")
+        fcs_start = marker_pos.get("FCS starts")
+        if fcs_start is not None:
+            fcs_mask = idx_sym >= fcs_start
+            n_fcs = fcs_mask.sum()
+            near_fcs = near & fcs_mask
+            print(f"  -> FCS sub-range: sample[{fcs_start},{s1})  {n_fcs} symbols  "
+                  f"near decision line = {near_fcs.sum()} ({100*near_fcs.sum()/n_fcs:.1f}%)"
+                  if n_fcs else "  -> FCS sub-range: no symbols recovered")
+
         xs_sample = np.arange(s0, s1)
+        if zr2_start is not None and fcs_start is not None:
+            ax.axvspan(zr2_start, fcs_start, color=GRAY, alpha=0.3, zorder=0,
+                      label="zero-run2 (expected all-zero) -- masked out")
+            ax.axvspan(fcs_start, s1, color="cyan", alpha=0.15, zorder=0,
+                      label="FCS (2-byte CRC)")
         ax.plot(xs_sample, y[s0:s1], "-", color=GRAY, lw=0.5, alpha=0.7, label="raw y")
         ax.axhline(0, color="k", lw=0.8, ls="--", label="old threshold=0")
         ax.axhline(offset_thr, color=PURPLE, lw=1.8,
