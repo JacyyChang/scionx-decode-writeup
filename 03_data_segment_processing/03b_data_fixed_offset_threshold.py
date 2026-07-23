@@ -24,6 +24,12 @@ README). Once each frame's start is found:
      line and the resulting decisions on the plot -- no BER is computed
      (the data content changes frame to frame, so comparing against the
      reference frame wouldn't be meaningful).
+  4. Mark every symbol sitting within MARGIN_FRAC*A of the decision line
+     (both below AND above threshold, not just the strip between the old
+     threshold=0 and the new offset threshold) -- these are the most
+     error-prone, lowest-confidence candidates regardless of which exact
+     threshold turns out to be right (see the folder README's "Key
+     findings").
 """
 
 import os
@@ -53,6 +59,9 @@ HEADER_ADDR = bytes.fromhex("849c6086aa4060849c60a686b0e1")   # Dest+Src address
 Z_THRESHOLD = 12.0        # frame detection threshold (see 01_frame_detection.py)
 MIN_FRAME_GAP = 100_000
 SEARCH_SAMPLES = 19211    # search range covering the header through the trailing flags (relative to frame start)
+MARGIN_FRAC = 0.10        # "close to the decision line" half-band, as a fraction of A=median(|y|);
+                          # symmetric on both sides of the threshold -- a symbol is flagged if
+                          # |y[n] - threshold| <= MARGIN_FRAC*A, whether it landed above or below
 
 REF_ROWS = (
     "849c6086aa4060849c60a686b0e103f0"
@@ -198,11 +207,16 @@ def get_data_segments(y, start):
 
 
 def plot_frame(plt, y, start, frame_no, z_score, data_segs, offset_thr, hdr_err):
+    A = np.median(np.abs(y))
+    margin = MARGIN_FRAC * A
+
     print("=" * 78)
     print(f"[Frame #{frame_no}] start sample={start}  z-score={z_score:.2f}")
     print("=" * 78)
     print(f"Best fixed threshold re-scanned from header+address = {offset_thr:+.4f}"
           f" (header 144-bit error count={hdr_err})")
+    print(f"A = {A:.4f}   near-decision-line margin = {MARGIN_FRAC*100:.0f}%A = {margin:.4f}"
+          f"  -> band = [{offset_thr-margin:+.4f}, {offset_thr+margin:+.4f}]")
 
     fig, axes = plt.subplots(2, 1, figsize=(16, 9))
     for ax, (name, s0, s1) in zip(axes, data_segs):
@@ -213,25 +227,30 @@ def plot_frame(plt, y, start, frame_no, z_score, data_segs, offset_thr, hdr_err)
         bits_fixed0 = (y_sym > 0).astype(np.uint8)
         bits_offset = (y_sym > offset_thr).astype(np.uint8)
         n_diff = (bits_fixed0 != bits_offset).sum()
+        near = np.abs(y_sym - offset_thr) <= margin   # symmetric: below AND above the threshold
         print(f"\n{name}: sample[{s0},{s1})  {j1-j0} symbols  "
               f"threshold-0 vs threshold-{offset_thr:+.3f}: symbols with a different decision = {n_diff} "
-              f"({100*n_diff/(j1-j0):.1f}%)")
+              f"({100*n_diff/(j1-j0):.1f}%)  |  near decision line (|y-threshold|<={margin:.3f}) = "
+              f"{near.sum()} ({100*near.sum()/(j1-j0):.1f}%)")
 
         xs_sample = np.arange(s0, s1)
         ax.plot(xs_sample, y[s0:s1], "-", color=GRAY, lw=0.5, alpha=0.7, label="raw y")
         ax.axhline(0, color="k", lw=0.8, ls="--", label="old threshold=0")
         ax.axhline(offset_thr, color=PURPLE, lw=1.8,
                   label=f"new threshold (fixed offset)={offset_thr:+.3f}")
+        ax.axhline(offset_thr - margin, color=PURPLE, lw=0.8, ls=":", alpha=0.7,
+                  label=f"±{MARGIN_FRAC*100:.0f}%A band around threshold")
+        ax.axhline(offset_thr + margin, color=PURPLE, lw=0.8, ls=":", alpha=0.7)
 
         xs_sym = idx_sym
         colors = [BLUE if b == 1 else ORANGE for b in bits_offset]
         ax.scatter(xs_sym, y_sym, c=colors, s=22, zorder=4, edgecolors="k", linewidths=0.3,
                   label="decided as 1 (blue) / decided as 0 (orange) -- new threshold")
-        changed = bits_fixed0 != bits_offset
-        if changed.any():
-            ax.scatter(xs_sym[changed], y_sym[changed], s=80, facecolors="none",
+        if near.any():
+            ax.scatter(xs_sym[near], y_sym[near], s=80, facecolors="none",
                       edgecolors="red", linewidths=1.5, zorder=5,
-                      label=f"decision differs from old threshold ({changed.sum()} total)")
+                      label=f"near decision line, below or above ({near.sum()} total, "
+                            f"{100*near.sum()/(j1-j0):.1f}%) -- most error-prone")
 
         ax.set_xlim(s0, s1)
         ax.set_xlabel("sample index")
@@ -240,7 +259,8 @@ def plot_frame(plt, y, start, frame_no, z_score, data_segs, offset_thr, hdr_err)
         ax.legend(loc="upper right", fontsize=7.5, ncol=2)
 
     fig.suptitle(f"Frame #{frame_no} (start sample={start}): fixed offset threshold"
-                 f" (={offset_thr:+.3f}, calibrated from the known header 144 bits) applied to data1/data2")
+                 f" (={offset_thr:+.3f}, calibrated from the known header 144 bits) applied to data1/data2"
+                 f"  --  red rings = within {MARGIN_FRAC*100:.0f}%A of the decision line")
     p = save(fig, os.path.join("Figure", f"03b_frame{frame_no}.png"))
     plt.close(fig)
     print(f"\nFigure saved: {p}")

@@ -13,7 +13,7 @@ the header to data1/data2, presented via two scripts:
 | Script | Content | Output |
 |---|---|---|
 | `03a_data_asymmetry_check.py` | Shows the asymmetry itself: per-point color coding + each group's local moving average, to see whether the asymmetry drifts slowly with position | `Figure/03a_frame1.png`, `03a_frame2.png`, `03a_frame3.png` |
-| `03b_data_fixed_offset_threshold.py` | Applies the calibrated fixed offset threshold to data1/data2, overlaying the decision line, and compares how much it differs from the old threshold (=0) | `Figure/03b_frame1.png`, `03b_frame2.png`, `03b_frame3.png` |
+| `03b_data_fixed_offset_threshold.py` | Applies the calibrated fixed offset threshold to data1/data2, overlaying the decision line, and rings every symbol sitting close to that line -- below **or** above it | `Figure/03b_frame1.png`, `03b_frame2.png`, `03b_frame3.png` |
 
 Both scripts' frame detection uses the same method as
 [`01_frame_detection/`](../01_frame_detection/) (normalized
@@ -43,6 +43,8 @@ analysis both use raw y only.
 | $\theta^*$ | the calibrated, best fixed offset threshold |
 | $y[n]$ | symbol $n$'s center signal value within data1/data2 |
 | $\hat b[n]$ | the data segment's decision result (0 or 1; ★ this is a threshold decision, not ground truth) |
+| $A$ | amplitude estimate, $A=\mathrm{median}(\lvert Y\rvert)$ (over the whole recording) |
+| $m$ | "near the decision line" half-band, $m = \text{MARGIN\_FRAC}\cdot A$ (default $\text{MARGIN\_FRAC}=0.10$, i.e. $\pm 10\%A$) |
 
 ### 1. Frame detection
 
@@ -66,7 +68,7 @@ v_1)]$, and take the one with the fewest errors as the best fixed offset
 threshold:
 
 $$
-\theta^* = \arg\min_{\theta}\ \Big(\ \#\{x\in v_1 \mid x \le \theta\}\ +\ \#\{x\in v_0 \mid x > \theta\}\ \Big)
+\theta^* = \arg\min_{\theta}\ \Big(\ \bigl|\{x\in v_1 \mid x \le \theta\}\bigr|\ +\ \bigl|\{x\in v_0 \mid x > \theta\}\bigr|\ \Big)
 $$
 
 This threshold is re-calibrated from this frame's **own** header, not
@@ -96,14 +98,28 @@ $\hat b[n]$; (2) each group's local moving average (the window is counted
 in "points within the group"), to see whether the two groups' means drift
 slowly with position within the segment.
 
-### 4b. Apply the decision line (`03b`)
+### 4b. Apply the decision line, and flag the low-confidence symbols (`03b`)
 
 Draw the same $\theta^*$ directly as a decision line over the raw waveform,
-while also keeping the old threshold's (=0) decision results for
-comparison, marking which symbols' decisions change because of the new
-threshold. No bit error rate is computed -- the data segments' content
-changes frame to frame, so there's no reliable ground truth to compare
-against.
+keeping the old threshold's (=0) line for reference. Then ring every symbol
+whose distance to $\theta^*$ falls inside a symmetric half-band, **on either
+side**:
+
+$$
+\bigl|\,y[n]-\theta^*\,\bigr| \le m
+$$
+
+This is a different (and broader) set than "symbols whose decision changed
+between $\theta=0$ and $\theta=\theta^*$": that comparison only catches
+symbols sitting in the strip between the two threshold values, so it misses
+low-confidence symbols that land just *above* $\theta^*$ -- those never
+disagreed with the old threshold, but they're just as close to the current
+decision line. Ringing $\lvert y[n]-\theta^*\rvert \le m$ instead catches
+both sides symmetrically, matching the "Possible future updates" idea in the
+main README of identifying the bits closest to the decision line as the most
+error-prone candidates. No bit error rate is computed -- the data segments'
+content changes frame to frame, so there's no reliable ground truth to
+compare against.
 
 ## Key findings
 
@@ -124,6 +140,13 @@ against.
   pushes the "decided as 0" group's mean further from -A (see 03a's output),
   but there's no CRC or other independent verification confirming whether
   this actually improves accuracy.
+- **The symmetric near-decision-line band (±10%A around $\theta^*$) flags a
+  similar-sized but not identical group**: roughly 1.6-6.7% of data1/data2's
+  symbols per segment, across the three frames -- including some that sit
+  just *above* $\theta^*$ and therefore never showed up in the old-vs-new
+  comparison at all. These are the natural starting point for the "check
+  against an actually-decoded frame" direction in the main README, since
+  they're low-confidence independent of which exact threshold is correct.
 
 ## How to run
 
