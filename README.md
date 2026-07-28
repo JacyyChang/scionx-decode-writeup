@@ -48,25 +48,48 @@ rate against).
 | [`02_zero_run_baseline/`](02_zero_run_baseline/) | After auto-detecting each frame, uses decision-directed baseline restoration + two decision methods to flag the isolated "1"s inside the zero-run segments; outputs one figure per frame | Phase 7 |
 | [`03_data_segment_processing/`](03_data_segment_processing/) | After auto-detecting each frame, calibrates a fixed offset threshold from known header bits: shows the asymmetry itself (03a) + applies the decision line (03b); outputs one figure per frame | Phase 9 / 10 |
 
+That folder also has a 4th script, `03c_symbol_sync_timing.py`, trying GNU
+Radio's real `symbol_sync` (Gardner/M&M timing recovery) as a replacement for
+the fixed-rate/fixed-phase sampling the other three folders all use -- see
+"Current results" below. It's the one script in this repo that needs GNU
+Radio; everything else stays dependency-light on purpose.
+
+## Beacon field reference (`04_Beacon/`)
+
+[`04_Beacon/`](04_Beacon/) is a different kind of folder: not a diagnostic
+method, but a beacon telemetry field-layout reference (`SCIONX_TLMnew.xlsx` +
+`SCIONX_enums.json`, both user-supplied) plus a script,
+`04_beacon_field_decode.py`, that maps one frame's decoded Info field (the
+256-byte telemetry payload) onto that layout and writes a per-field,
+per-bit spreadsheet -- with the low-confidence bits colored so it's visible
+at a glance which decoded values are trustworthy. See
+[`04_Beacon/README.md`](04_Beacon/README.md) for details and an example
+output.
+
 ## How to run
 
-Only three packages are needed -- **GNU Radio is not required**:
+Only four packages are needed -- **GNU Radio is not required** (see `requirements.txt`):
 
 ```bash
-pip install numpy matplotlib soundfile
-cd 01_frame_detection    # or 02_.../ 03_.../
+pip install -r requirements.txt   # numpy, matplotlib, soundfile, openpyxl
+cd 01_frame_detection    # or 02_.../ 03_.../ 04_Beacon/
 python 01_frame_detection.py    # swap in whichever script you want to run
 ```
 
+(The one exception is `03_data_segment_processing/03c_symbol_sync_timing.py`,
+which needs a separate Python with GNU Radio installed -- see that folder's
+README.)
+
 Every script is independently runnable -- it reads `Data/cut_first3.ogg`
 directly and recomputes everything itself, with no dependency on any other
-script's intermediate output. Running one will save a new PNG in
-**whatever folder you're currently in** (overwriting/adding a file with the
-same name) and print the measured numbers to the terminal.
+script's intermediate output. Running one will save a new PNG (or, for
+`04_Beacon/04_beacon_field_decode.py`, an `.xlsx`) in **whatever folder
+you're currently in** (overwriting/adding a file with the same name) and
+print the measured numbers to the terminal.
 
 The shared code (the `scionx/` package, `_style.py`'s plotting setup) lives
-in this folder's (`Share/`) root; scripts in all three category folders find
-it automatically, with no need to copy it separately.
+in this folder's (`Share/`) root; scripts in all category folders find it
+automatically, with no need to copy it separately.
 
 ## Other reference files
 
@@ -105,15 +128,29 @@ it automatically, with no need to copy it separately.
   frame (e.g. the parts with known correct answers, like header/address/CRC)
   as a baseline to manually check and filter out the errors caused by these
   borderline cases.
+- **Decoding frame#2's Info field against the beacon's actual telemetry
+  layout confirms the header is clean but the payload isn't**:
+  `04_Beacon/04_beacon_field_decode.py` decodes one frame's 256-byte Info
+  field against `SCIONX_TLMnew.xlsx`'s field layout. For frame#2, Dest/Src
+  address + Control + PID all decode to exactly the expected ground-test
+  values (`'BN0CU '` / `'BN0SCX'` / `0x03` / `0xF0`, 0 header bit errors) --
+  so the header is fully intact and nothing is missing in front of the Info
+  field. But only 26/2192 bits across the whole frame (header+data+zero-run+
+  FCS) are flagged as low-confidence, and the transmitted FCS doesn't match
+  the computed CRC-16/X.25 of the payload either way it's decided -- i.e.
+  most of the frame is being decided *confidently*, just not all of it
+  *correctly*. See [`04_Beacon/README.md`](04_Beacon/README.md).
 
 ## Possible future updates
 
-- **Switch to GNU Radio's built-in `symbol_sync` to find bits**: right now
-  every script in `Share/` samples the signal directly at a fixed rate and
-  fixed phase (`PHASE`), without doing real symbol timing recovery. Switching
-  to GNU Radio's `symbol_sync` (Gardner TED and similar algorithms) to
-  re-track the sampling instant could fix whatever error the current
-  fixed-phase sampling might be introducing.
+- ~~Switch to GNU Radio's built-in `symbol_sync` to find bits~~ -- **tried**,
+  see `03_data_segment_processing/03c_symbol_sync_timing.py`. Sweeping 125
+  TED/loop-bandwidth/front-end-filter combinations on frame#1, the best
+  config (Gardner, loop_bw=0.08, 0.75x-symbol-rate low-pass front end)
+  lowered the header bit-error count from 5/144 (current fixed-phase method)
+  to 2/144, with a visibly cleaner eye diagram -- but CRC still fails. Real
+  timing recovery is a genuine improvement over fixed-phase sampling, just
+  not by itself enough to explain the 0-frames-pass-CRC result.
 - **Use frame information to confirm/correct bit correctness**: right now
   every bit is decided independently, using only a single fixed threshold;
   this could be changed to use known structure (the parts of the

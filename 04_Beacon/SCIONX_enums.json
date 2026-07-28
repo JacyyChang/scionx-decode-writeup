@@ -1,0 +1,208 @@
+{
+  "enums": {
+    "is_nominal":{"0":"containgency state(safe, phoneix)","1":"nominal state(charging, COMM, SCI)"},
+    "uhf_tx_pwr":{"0":"Low power(0.3W)","1":"Full power(1.5W)"},
+    "Spacecraft_mode": {
+      "0":"Phoenix Mode","1":"Safe Mode","2":"Charging Mode","3":"Communication Xband Mode",
+      "A":"Science HyperSCAN Mode","B":"Science CIP Mode","C":"Reentry Mode","FF":"Undefine Mode"},
+    "EPS_onoff_state":{"0":"OFF","1":"ON"},
+    "ADCS_onoff_state":{"0":"OFF","1":"ON"},
+    "UHF_onoff_state":{"0":"OFF","1":"ON"},
+    "Xband_onoff_state":{"0":"OFF","1":"ON"},
+    "CIP_onoff_state":{"0":"OFF","1":"ON"},
+    "HyperSCAN_onoff_state":{"0":"OFF","1":"ON"},
+    "SEUV_onoff_state":{"0":"OFF","1":"ON"},
+    "APRS_onoff_state":{"0":"OFF","1":"ON"},
+    
+    "ADCS_AE_Mode":{
+      "0":"No attitude estimation","1":"MEMS rate sensing","2":"Magnetometer rate filter",
+      "3":"Magnetometer rate filter with pitch estimation","4":"Magnetometer and Fine-sun TRIAD algorithm ",
+      "5":"Full-state EKF","6":"MEMS gyro EKF","7":"User Coded Estimation Mode"
+      },
+    "ADCS_Control_Mode":{
+      "0":"No control","1":"Detumbling control","2":"Y-Thomson spin",
+      "3":"Y-Wheel momentum stabilized – Initial Pitch Acquisition","4":"Y-Wheel momentum stabilized – Steady State",
+      "5":"XYZ-Wheel control","6":"Rwheel sun tracking control","7":"Rwheel target tracking control",
+      "8":"Very Fast-spin Detumbling control","9":"Fast-spin Detumbling control",
+      "10":"User Specific Control Mode 1","11":"User Specific Control Mode 2","12":"Stop R-wheels",
+      "13":"User Coded Control Mode","14":"Yaw-only or roll-only sun tracking mode","15":"Target-tracking yaw-only wheel control Mode"
+      },
+    "ADCS_Run_Mode":{
+      "0":"Off","1":"Enabled","2":"Triggered","3":"Simulation"},
+    "ADCS Sensors&Actuator":{"0":"OFF","1":"ON"},
+    "ADCS Error Flag":{"0":" No error","1":" Error"},
+    "ADCS_Commissioning_State":{
+      "0":"Initial Angular Rate Estimation","1":"Detumbling","2":"Magnetometer Deployment",
+      "3":"Magnetometer Calibration","4":"XYZ reaction wheel control",
+      "5":"Sun/Nadir Sensor Commissioning","6":"CubeStar Commissioning","7":"Sun Tracking 3-Axis Control",
+      "9":" None, all finished"},
+    "ADCS_Mag_Cal_DataLog_Flag":{"0":" Complete","1":"Incomplete"},
+    "ADCS_Finetune_Bias_XYZ":{"0":" Complete","1":"Incomplete"},
+    "ADCS_Finetune_Bias_SunTrack":{"0":" Complete","1":"Incomplete"},
+    "ADCS_Finetune_Bias_Y":{"0":" No fine-tuning","1":"Need fine-tuning"},
+    "ADCS_Processed_Flag":{"0":" has NOT been processed ","1":" has been processed"},
+    "ADCS_TC_Error_Status":{"0":"No Error","1":"Invaild telecommand ID","2":"Incorrect TC parameter length","3":"Incorrect TC parameter value","4":"CRC check failed"},
+    
+    "UHF_SWD_Function":{"0":"ON","1":"OFF"},
+    "UHF Echo Mode":{"0":"ON","1":"OFF"},
+    "UHF AFC":{"0":"ON","1":"OFF"},
+    "UHF SWD Announciate":{"0":"ON","1":"OFF"},
+    "UHF Readback Mode":{"0":"decimal","1":"raw","2":"hex"},
+    "UHF Channel":{"0":"437.500 MHz","1":"437.345 MHz","2":"436.500 MHz","3":"435.500 MHz"},
+    "XBAND_MODCOD": {
+      "1":"1/4 QPSK","2":"1/3 QPSK","3":"2/5 QPSK","4":"1/2 QPSK","5":"3/5 QPSK",
+      "6":"2/3 QPSK","7":"3/4 QPSK","8":"4/5 QPSK","9":"5/6 QPSK","10":"8/9 QPSK",
+      "11":"9/10 QPSK","12":"3/5 8PSK","13":"2/3 8PSK","14":"3/4 8PSK","15":"5/6 8PSK",
+      "16":"8/9 8PSK","17":"9/10 8PSK","18":"2/3 16APSK","19":"3/4 16APSK","20":"4/5 16APSK",
+      "21":"5/6 16APSK","22":"8/9 16APSK","23":"9/10 16APSK","24":"3/4 32APSK",
+      "25":"4/5 32APSK","26":"5/6 32APSK","27":"8/9 32APSK","28":"9/10 32APSK"
+    },
+    "XBand_RollOff": { "0":"0.35","1":"0.25","2":"0.20" },
+    "XBand_Pilot":   { "0":"OFF","1":"ON" },
+    "XBAND.FECFrame":{ "0":"Normal","1":"Short" },
+    "XBand_FEC_FrameSize":{ "1":"Sys After Reset","2":"Sys Idle Mode","3":"Sys Transmission Mode","4":"Sys Going to Shutdown" },
+  
+    "APRS_Radio":   { "0":"APRS Radio Module sleep","1":"APRS Radio Module active" },
+    "APRS_Digipeater":   { "0":"Digipeater function Enable","1":"Digipeater function Disable" },
+    "CIP_Mode":   { "7":"CIP Idle Mode","8":"CIP Normal Mode","9":"CIP Fast Mode" }
+  },
+
+  "transforms": {
+    "CMD_Loss_Timer": {"unit": "","display_format": "hh:mm:ss","comment": "Convert raw seconds to HH:mm:ss string"},
+    "obc_time": {"unit": "s","display_format": "YYYY-MM-DD HH:mm:ss","timezone": "Asia/Taipei","offset_hours": 8},
+    "Last_pkt_send_time": {"unit": "s","display_format": "YYYY-MM-DD HH:mm:ss","timezone": "Asia/Taipei","offset_hours": 8},
+    "Address_HEX": {
+        "unit": "",
+        "display_format": "X", 
+        "suffix": " (hex)",
+        "comment": "Display as Hexadecimal string"
+    },
+
+    "ADCS_Time": {"unit": "s","display_format": "YYYY-MM-DD HH:mm:ss","timezone": "Asia/Taipei","offset_hours": 8},
+    "ADCS_3V3_I":{"scale": 0.48828125,"unit": "mA"},
+    "ADCS_5V_I":{"scale": 0.48828125,"unit": "mA"},
+    "ADCS_Vbat_I":{"scale": 0.48828125,"unit": "mA"},
+    "ADCS_MCU_Temp":{"unit": "°C"},
+    "ADCS_MAG_Temp":{"scale": 0.1,"unit": "°C"},
+    "ADCS ECI position":{"scale": 0.25,"unit": "km"},
+    "ADCS Rate Sensor Rates":{"scale": 0.01,"unit": "deg/s"},
+    "ADCS Estimated Angular Rates":{"scale": 0.001,"unit": "deg/s"},
+    "ADCS Sun Vector":{"scale": 0.00001,"unit": "deg/s"},
+    "ADCS Wheel Speed":{"unit": "rpm"},
+
+    "Temperature":{"unit": "°C"},
+    "Xband_Symbol_Rate":{"unit": "Msp/s"},
+    "Xband_Transmit_Power":{"unit": "dBm"},
+    "Xband_Central_Freq":{"unit": "MHz"},
+    "XBand_PreTx_Delay":{"unit": "ms"},
+    "Xband_PA_Temp":{"scale": 0.01,"unit": "°C"},
+    "Xband_Msd_TxPower":{"scale": 0.01,"unit": "dBm"},
+
+    "EPS_V": {"unit": "V","signed": true,"bit_shift": -3,"scale": 0.008,"display_format": "F3"},
+    "EPS_I": {"unit": "A","signed": true,"bit_shift": -3,"scale": 0.004,"display_format": "0.000","comment": "1. is_signed 處理二補數, 2. bit_shift 處理右移, 3. slope (40uV / 0.01R) = 0.004"},
+    "EPS_MainBattery_V":{"scale": 0.001,"unit": "V"},
+    "EPS_MainBattery_I":{"scale": 0.001,"unit": "A"},
+    "EPS_Battery_V":{"scale": 0.001,"unit": "V"},
+    "EPS_Battery_I":{"scale": 0.001,"unit": "A"},
+    "EPS_main_SOC":{"scale": 0.01,"unit": "%"},
+
+    "HyperSCAN Current": {
+      "scale": 0.001, 
+      "unit": "A",
+      "display_format": "F3" 
+    },
+    "HyperSCAN Voltage": {
+      "scale": 0.0010002442,
+      "unit": "V",
+      "display_format": "F3" 
+    },
+    "HyperSCAN Temp": {
+        "lut_ntc": "HyperSCAN_Temp_Table", 
+        "unit": "°C",
+        "display_format": "F2"
+    },
+    "Temp":{"unit": "°C"},
+
+    "APRS_RXV":{"scale": 0.01,"unit": "V"},
+    "APRS_TXV":{"scale": 0.01,"unit": "V"},
+    "APRS_Temp":{"scale": 0.01,"unit": "°C"}
+  },
+
+  "nameRules": [
+    {
+        "pattern": "^(static_0_addr|dynamic_0_addr|SD_Write_Beacon|SD_Write_plCip|SD_Write_plSeuv|SD_Write_plHS|SD_Write_ADCS)$",
+        "transform": "Address_HEX"
+    },
+    {
+    "pattern": "^(ADCS_CC_Sig|ADCS_CC_Mot|ADCS_CubeSense1|ADCS_CubeSense2|ADCS_CubeWheel1|ADCS_CubeWheel2|ADCS_CubeWheel3|ADCS_CubeStar)$",
+    "transform": "ADCS Sensors&Actuator"
+    },
+    {
+    "pattern": "^(ADCS_CubeSense1_Comm|ADCS_CubeSense_Comm|ADCS_CubeControl Signal_Comm|ADCS_CubeControl Motor_Comm|ADCS_CubeWheel1_Comm|ADCS_CubeWheel2_Comm|ADCS_CubeWheel3_Comm|ADCS_CubeStar_Comm|ADCS_Cam1_SRAM_OC|ADCS_Cam1_3V3_OC|ADCS_Cam1_Sen_Busy|ADCS_Cam1_Sen_Det|ADCS_Cam2_SRAM_OC|ADCS_Cam2_3V3_OC|ADCS_Cam2_Sen_Busy|ADCS_Cam2_Sen_Det|ADCS_MAG_Range|ADCS_Sun_Sensor_Range|ADCS_Nadir_Sensor_Range|ADCS_Rate_Sensor_Range|ADCS_Wheel_Speed_Range|ADCS_Coarse_Sun_Sensor|ADCS_StarTracker_Match|ADCS_Star_Tracker_OC)$",
+    "transform": "ADCS Error Flag"
+    },
+    {
+    "pattern": "^(ADCS_ECI_Ref_X|ADCS_ECI_Ref_Y|ADCS_ECI_Ref_Z)$",
+    "transform": "ADCS ECI position"
+    },
+    {
+    "pattern": "^(ADCS_X_Angular_Rate|ADCS_Y_Angular_Rate|ADCS_Z_Angular_Rate)$",
+    "transform": "ADCS Rate Sensor Rates"
+    },
+    {
+    "pattern": "^(ADCS_Est_X_Angular_Rate|ADCS_Est_Y_Angular_Rate|ADCS_Est_Z_Angular_Rate)$",
+    "transform": "ADCS Estimated Angular Rates"
+    },
+    {
+    "pattern": "^(ADCS_Mag_Polarity_Error|ADCS_IARE_Unexpected_Error|ADCS_IARE_MainMag_Fault_Error|ADCS_IARE_RateTooFast_Error|ADCS_Detumbling_Error|ADCS_Mag_Deploy_Error|ADCS_CW_Performance_Error|ADCS_XYZ_Polarity_Error_Flag|ADCS_SunTrack_Pointing_Perf_Error|)$",
+    "transform": "ADCS Commissioning step"
+    },
+    {
+    "pattern": "^(ADCS_SunX|ADCS_SunY|ADCS_SunZ)$",
+    "transform": "ADCS Sun Vector"
+    },
+    {
+    "pattern": "^(ADCS_X_Wheel_Speed|ADCS_Y_Wheel_Speed|ADCS_Z_Wheel_Speed)$",
+    "transform": "ADCS RWs_speed"
+    },
+
+    {
+    "pattern": "^(UHF_Temperature|XBand_CPU_Temp)$",
+    "transform": "Temperature"
+    },
+    {
+    "pattern": "^(Xband_PA_Temp)$",
+    "transform": "XBand_Temp"
+    },
+    { "pattern": "^SP\\d+_V$",          "transform": "INA3221_voltage" },
+    { "pattern": "^SP\\d+_I$",          "transform": "INA3221_current" },
+    { "pattern": "^Battery_main_V$",    "transform": "Battery_main_V"  },
+
+    { "pattern": "^Spacecraft_mode$",   "enum": "SCIONX.CurrentMode"   },
+    {
+    "pattern": "^(EPS_SP0_V|EPS_SP1_V|EPS_SP2_V|EPS_SP3_V|EPS_SP4_V|EPS_CDH3V3|EPS_UHF7V|EPS_HyperSCAN5V|EPS_ADCS5V|EPS_ADCS12V|EPS_ADCS3V3|EPS_CIP12V|EPS_Xband12V|EPS_SEUV5V|EPS_SEUV3V3|EPS_APRS5V)$",
+    "transform": "EPS_V"
+    },
+    {
+    "pattern": "^(EPS_SP0_I|EPS_SP1_I|EPS_SP2_I|EPS_SP3_I|EPS_SP4_I|EPS_CDH3V3_I|EPS_UHF7V_I|EPS_HyperSCAN5V_I|EPS_ADCS5V_I|EPS_ADCS12V_I|EPS_ADCS3V3_I|EPS_CIP12V_I|EPS_Xband12V_I|EPS_SEUV5V_I|EPS_SEUV3V3_I|EPS_APRS5V_I)$",
+    "transform": "EPS_I"
+    },
+    {
+    "pattern": "^(EPS_Battery_Temp1|EPS_Battery_Temp2|EPS_Battery_Temp3|EPS_SP0_Temp|EPS_SP1_Temp|EPS_SP2_Temp|EPS_SP3_Temp|EPS_SP4_Temp|EPS_main_Temp|EPS_Distribution_Temp|EPS_CDH3V3_Temp|CIP_Temp0|CIP_Temp1|CIP_Temp2)$",
+    "transform": "Temp"
+    },
+    {
+    "pattern": "^(HyperSCAN_SF2_I|HyperSCAN_CMOS_I)$",
+    "transform": "HyperSCAN Current"
+    },
+    {
+    "pattern": "^(HyperSCAN_CMOSV_1|HyperSCAN_CMOSV_2|HyperSCAN_CMOSV_3|HyperSCAN_CMOSV_4)$",
+    "transform": "HyperSCAN Voltage"
+    },
+    {
+    "pattern": "^(HyperSCAN_SF2_Temp1|HyperSCAN_CMOS_Temp1)$",
+    "transform": "HyperSCAN Temp"
+    }
+    
+  ]
+}

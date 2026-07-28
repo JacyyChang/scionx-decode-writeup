@@ -14,6 +14,7 @@ the header to data1/data2, presented via two scripts:
 |---|---|---|
 | `03a_data_asymmetry_check.py` | Shows the asymmetry itself: per-point color coding + each group's local moving average, to see whether the asymmetry drifts slowly with position | `Figure/03a_frame1.png`, `03a_frame2.png`, `03a_frame3.png` |
 | `03b_data_fixed_offset_threshold.py` | Applies the calibrated fixed offset threshold to data1/data2, overlaying the decision line, and rings every symbol sitting close to that line -- below **or** above it. The second panel's range is extended past data2 through zero-run2 and FCS, with those boundaries marked | `Figure/03b_frame1.png`, `03b_frame2.png`, `03b_frame3.png` |
+| `03c_symbol_sync_timing.py` | ⚠️ needs GNU Radio (the one exception in this repo). Replaces the fixed-rate/fixed-phase sampling with GNU Radio's real `digital.symbol_sync_ff`, sweeping TED type × loop bandwidth × front-end filter (125 configs) on frame#1, scored by CRC pass > header bit-error count > near-decision-line count | `Figure/03c_frame1.png` |
 
 Both scripts' frame detection uses the same method as
 [`01_frame_detection/`](../01_frame_detection/) (normalized
@@ -176,6 +177,13 @@ the FCS sub-range.
   bits' low-confidence count doesn't stand out from the rest of the frame,
   which argues against "the CRC itself is unusually hard to slice" as an
   explanation for the 0-frames-pass-CRC result.
+- **Real symbol timing recovery (03c) improves header BER but doesn't fix
+  CRC**: swapping the fixed-rate/fixed-phase sampling for GNU Radio's actual
+  `symbol_sync` (best config: Gardner TED, loop_bw=0.08, 0.75x-symbol-rate
+  low-pass front end) drops frame#1's header bit-error count from 5/144
+  (current fixed-phase method) to 2/144, with a visibly cleaner eye diagram.
+  CRC still fails at the best config, though -- timing recovery alone isn't
+  the whole story.
 
 ## How to run
 
@@ -190,3 +198,12 @@ live one directory up -- the scripts find them automatically. Running them
 saves one new PNG per detected frame into this folder's `Figure/` subfolder,
 and prints each frame's calibrated threshold, header error count, and
 data1/data2 decided-as-1/decided-as-0 statistics to the terminal.
+
+`03c_symbol_sync_timing.py` is the one exception: it needs a Python with
+GNU Radio installed (confirmed working with `radioconda`'s), and only
+processes frame#1 (a full 3-frame x 125-config sweep is the point where
+GNU Radio's block-scheduling overhead per run starts to matter):
+
+```bash
+C:\Users\USER\radioconda\python.exe 03c_symbol_sync_timing.py
+```

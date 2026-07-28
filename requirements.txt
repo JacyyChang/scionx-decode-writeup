@@ -3,3 +3,9 @@
 numpy
 matplotlib
 soundfile
+openpyxl   # 04_Beacon/04_beacon_field_decode.py only (reads/writes the beacon field-layout .xlsx)
+
+# 03_data_segment_processing/03c_symbol_sync_timing.py is the one deliberate
+# exception to "GNU Radio is NOT required" (see its own docstring) -- it
+# needs a Python with gnuradio installed and isn't listed here since the
+# rest of the pipeline doesn't depend on it.
