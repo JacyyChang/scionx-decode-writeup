@@ -12,8 +12,10 @@ that decodes one frame's Info field (payload byte `[16,272)`, 256 bytes /
 |---|---|
 | `SCIONX_TLMnew.xlsx` | Field layout: one row per telemetry field (`Subsystem`, `ItemName`, `DataType`, `BitLen`, `OffsetBit`, `Endian`, `LongDescription`), 205 fields, tightly packed, `OffsetBit` cumulative from 0 = the Info field's first bit |
 | `SCIONX_enums.json` | Enum tables (`enums`), unit/scale conversions (`transforms`), and regex-based name-to-lookup rules (`nameRules`) for a subset of the fields |
-| `04_beacon_field_decode.py` | Decodes one frame (default: frame#2) against the layout above; writes `Output/frame<N>_beacon_decode.xlsx` |
-| `Output/` | Generated workbooks (not regenerated automatically -- re-run the script after changing `FRAME_INDEX`) |
+| `04a_zscore_visualization.py` | Plots the frame-detection z-score curve for a whole recording against `Z_THRESHOLD`, so a new recording's noise ceiling can be checked *before* trusting detection on it. **Run this first on any recording other than `cut_first3.ogg`.** |
+| `04_beacon_field_decode.py` | Decodes every frame detected in a recording (default: `../Data/cut_first3.ogg`, all 3 frames) against the layout above; writes one `Output/<audio stem>_frame<N>_beacon_decode.xlsx` per frame |
+| `Output/` | Generated workbooks (not regenerated automatically -- re-run the script to refresh) |
+| `Figure/` | Generated `04a_zscore_<audio stem>.png` plots |
 
 ## Decision rule (one consistent bitstream, reusing 02/03's own methods)
 
@@ -72,30 +74,73 @@ Out of 205 fields (frame#2 run): 52 resolved via their own `LongDescription`,
 lookup at all (still correctly decoded, just nothing to cross-reference
 against).
 
-## Key findings (frame#2)
+## Key findings (all 3 frames in `cut_first3.ogg`)
 
-- **The header decodes exactly right**: Dest Address = `'BN0CU '`
-  (SSID byte=0x60), Src Address = `'BN0SCX'` (SSID byte=0xE1), Control=`0x03`,
-  PID=`0xF0` -- all match the ground-test reference exactly (0/144 header bit
-  errors), confirming nothing is missing between the header and the Info
-  field's first bit (`APID`, OffsetBit=0).
-- **Only 26/2192 bits across the whole frame are flagged low-confidence**
-  (header=1/112, data1=11/488, zero-run1=5/664, data2=6/384,
-  zero-run2=3/528, FCS=0/16) -- yet the transmitted FCS does not match the
-  computed CRC-16/X.25 of the payload. Most of the frame is being decided
-  *confidently*, just not all of it *correctly*: low decision-confidence
-  alone doesn't explain the CRC failure.
+- **The header decodes exactly right in all 3 frames**: Dest Address =
+  `'BN0CU '` (SSID byte=0x60), Src Address = `'BN0SCX'` (SSID byte=0xE1),
+  Control=`0x03`, PID=`0xF0` -- matching the ground-test reference, confirming
+  nothing is missing between the header and the Info field's first bit
+  (`APID`, OffsetBit=0).
+- **Possibly-wrong (red) bits by segment, out of 2192 total**:
+
+  | Frame | header | data1 | zero-run1 | data2 | zero-run2 | FCS | **total** |
+  |---|---|---|---|---|---|---|---|
+  | #1 | 3/112 | 25/488 | 6/664 | 13/384 | 14/528 | 2/16 | **63/2192 (2.9%)** |
+  | #2 | 1/112 | 11/488 | 5/664 | 6/384 | 3/528 | 0/16 | **26/2192 (1.2%)** |
+  | #3 | 1/112 | 33/488 | 10/664 | 21/384 | 8/528 | 2/16 | **75/2192 (3.4%)** |
+
+  Frame#2 (the highest detection z-score of the three, and also the one with
+  0/144 header errors) has the fewest low-confidence bits by a clear margin --
+  consistent with it just being the cleanest reception of the three, not
+  anything specific to this decode step.
+- **None of the 3 frames pass CRC either way it's decided** (raw
+  threshold=0 baseline, or the mixed theta*/yc decision this script uses) --
+  and the low red-bit counts above mean most of each frame is being decided
+  *confidently*, just not all of it *correctly*. Low decision-confidence
+  alone doesn't explain the CRC failures.
+
+## Workflow for a new recording: check the threshold before trusting detection
+
+`Z_THRESHOLD=12.0` (both scripts) was calibrated on `cut_first3.ogg` alone,
+where it happens to sit very comfortably above the noise: noise ceiling 4.25,
+7.75 margin. That margin is **not** a general property of the detector --
+run on the full-pass recording this clip was cut from
+(`satnogs_14459039_2026-07-07T09-57-46.ogg`, 303s vs. 35.5s), the noise
+ceiling comes out to **11.96**, just **0.04** below the same 12.0 threshold.
+Same detector, same constant, wildly different safety margin -- because a
+longer recording simply has more chances for a noise spike to land near the
+template's correlation peak.
+
+So for any recording that isn't `cut_first3.ogg`, check first, decode second:
+
+```bash
+pip install numpy matplotlib soundfile openpyxl
+
+# 1. Check where the threshold sits for this specific recording
+python 04a_zscore_visualization.py path/to/other.ogg
+# -> read the printed noise-ceiling / margin numbers (and the plot) --
+#    if the margin to the noise ceiling looks too thin, or too many/few
+#    frames got flagged, retry with a different --z-threshold:
+python 04a_zscore_visualization.py path/to/other.ogg --z-threshold 13.5
+
+# 2. Decode using whichever threshold you settled on in step 1
+python 04_beacon_field_decode.py path/to/other.ogg --z-threshold 13.5
+```
 
 ## How to run
 
 ```bash
-pip install numpy matplotlib soundfile openpyxl
-python 04_beacon_field_decode.py
+python 04_beacon_field_decode.py                       # every frame in ../Data/cut_first3.ogg
+python 04_beacon_field_decode.py --frame 2              # just frame#2
+python 04_beacon_field_decode.py path/to/other.ogg --z-threshold 13.5
+python 04_beacon_field_decode.py path/to/other.ogg --frame 1 --z-threshold 13.5
 ```
 
 GNU-Radio-free. Needs `../scionx/` (`audio_io.py`, `baseline.py`, `hdlc.py`),
-found automatically. `FRAME_INDEX` (top of the script, default `2`) selects
-which of the 3 detected frames to decode -- change it and re-run to get
-`Output/frame1_beacon_decode.xlsx` or `frame3_...`. If the previous run's
-output file is still open in Excel, saving will fail with a permission
-error; close it first.
+found automatically. Frame numbering is purely by sample position within
+whichever recording is given (earliest = frame#1), the same convention
+01/02/03 use -- it isn't hardcoded to `cut_first3.ogg`'s 3 known frames.
+Output filenames are prefixed with the audio file's name (e.g.
+`cut_first3_frame2_beacon_decode.xlsx`) so runs against different recordings
+don't overwrite each other. If a previous run's output file is still open in
+Excel, saving over it will fail with a permission error; close it first.

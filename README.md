@@ -59,11 +59,21 @@ Radio; everything else stays dependency-light on purpose.
 [`04_Beacon/`](04_Beacon/) is a different kind of folder: not a diagnostic
 method, but a beacon telemetry field-layout reference (`SCIONX_TLMnew.xlsx` +
 `SCIONX_enums.json`, both user-supplied) plus a script,
-`04_beacon_field_decode.py`, that maps one frame's decoded Info field (the
-256-byte telemetry payload) onto that layout and writes a per-field,
-per-bit spreadsheet -- with the low-confidence bits colored so it's visible
-at a glance which decoded values are trustworthy. See
-[`04_Beacon/README.md`](04_Beacon/README.md) for details and an example
+`04_beacon_field_decode.py`, that maps each detected frame's decoded Info
+field (the 256-byte telemetry payload) onto that layout and writes a
+per-frame, per-field, per-bit spreadsheet -- with the low-confidence bits
+colored so it's visible at a glance which decoded values are trustworthy.
+Frame detection works the same way as 01/02/03 and isn't hardcoded to
+`cut_first3.ogg`, so it can be pointed at any other recording of this
+satellite too -- but the detection threshold (`Z_THRESHOLD`) is: it was only
+ever calibrated on `cut_first3.ogg`, where the noise floor sits a comfortable
+7.75 below it. A companion script, `04a_zscore_visualization.py`, plots that
+margin for any recording; running it on the full-length SatNOGS pass
+`cut_first3.ogg` was itself cut from showed the same threshold sitting just
+0.04 above that recording's noise ceiling -- close enough that both scripts
+now take a `--z-threshold` override, and the recommended workflow is to check
+with `04a` before decoding a new recording with `04_beacon_field_decode.py`.
+See [`04_Beacon/README.md`](04_Beacon/README.md) for details and example
 output.
 
 ## How to run
@@ -128,18 +138,18 @@ automatically, with no need to copy it separately.
   frame (e.g. the parts with known correct answers, like header/address/CRC)
   as a baseline to manually check and filter out the errors caused by these
   borderline cases.
-- **Decoding frame#2's Info field against the beacon's actual telemetry
+- **Decoding all 3 frames' Info fields against the beacon's actual telemetry
   layout confirms the header is clean but the payload isn't**:
-  `04_Beacon/04_beacon_field_decode.py` decodes one frame's 256-byte Info
-  field against `SCIONX_TLMnew.xlsx`'s field layout. For frame#2, Dest/Src
-  address + Control + PID all decode to exactly the expected ground-test
-  values (`'BN0CU '` / `'BN0SCX'` / `0x03` / `0xF0`, 0 header bit errors) --
-  so the header is fully intact and nothing is missing in front of the Info
-  field. But only 26/2192 bits across the whole frame (header+data+zero-run+
-  FCS) are flagged as low-confidence, and the transmitted FCS doesn't match
-  the computed CRC-16/X.25 of the payload either way it's decided -- i.e.
-  most of the frame is being decided *confidently*, just not all of it
-  *correctly*. See [`04_Beacon/README.md`](04_Beacon/README.md).
+  `04_Beacon/04_beacon_field_decode.py` decodes each frame's 256-byte Info
+  field against `SCIONX_TLMnew.xlsx`'s field layout. In all 3 frames, Dest/Src
+  address + Control + PID decode to exactly the expected ground-test values
+  (`'BN0CU '` / `'BN0SCX'` / `0x03` / `0xF0`) -- so the header is fully intact
+  and nothing is missing in front of the Info field. But only 1.2-3.4% of the
+  bits per frame (26-75 out of 2192, header+data+zero-run+FCS) are flagged as
+  low-confidence, and none of the 3 frames' transmitted FCS matches the
+  computed CRC-16/X.25 of its payload -- i.e. most of each frame is being
+  decided *confidently*, just not all of it *correctly*. See
+  [`04_Beacon/README.md`](04_Beacon/README.md).
 
 ## Possible future updates
 

@@ -53,10 +53,26 @@ field's own `LongDescription` column (verbatim) is used as the lookup
 column instead -- it already IS the field's own cross-reference table for
 ~96/205 fields in this sheet, and is authoritative where present.
 
-Output: `Output/frame<N>_beacon_decode.xlsx` (one row per beacon field, in
-OffsetBit order) -- GNU-Radio-free, needs only numpy/soundfile/openpyxl.
+Usage: `python 04_beacon_field_decode.py [audio.ogg] [--frame N] [--z-threshold Z]`.
+With no arguments, decodes every frame `detect_frame_starts` finds in
+`../Data/cut_first3.ogg` (frame detection is the same normalized
+cross-correlation method 01/02/03 use -- frame numbering is purely by sample
+position, earliest-in-the-recording = frame#1, and is not hardcoded to this
+one file: point it at any other recording of this satellite and it detects
+however many frames pass `Z_THRESHOLD`). `--frame N` restricts the run to a
+single 1-based frame index instead of decoding all of them. `--z-threshold`
+overrides `Z_THRESHOLD=12.0`, which was only ever calibrated on
+`cut_first3.ogg` -- for any other recording, run
+`04a_zscore_visualization.py` on it first (it prints/plots the noise
+ceiling and the margins to a candidate threshold) before trusting the
+default here.
+
+Output: `Output/<audio stem>_frame<N>_beacon_decode.xlsx` per decoded frame
+(one row per beacon field, in OffsetBit order) -- GNU-Radio-free, needs only
+numpy/soundfile/openpyxl.
 """
 
+import argparse
 import os
 import re
 import sys
@@ -86,8 +102,6 @@ AUDIO = os.path.join(os.path.dirname(HERE), "Data", "cut_first3.ogg")
 XLSX_PATH = os.path.join(HERE, "SCIONX_TLMnew.xlsx")
 ENUMS_PATH = os.path.join(HERE, "SCIONX_enums.json")
 OUT_DIR = os.path.join(HERE, "Output")
-
-FRAME_INDEX = 2                    # 1-based, in order of sample position (this run: frame#2)
 
 FLAGS4 = bytes([0x7E] * 4)
 HEADER_ADDR = bytes.fromhex("849c6086aa4060849c60a686b0e1")   # Dest+Src address, 14 bytes
@@ -672,42 +686,71 @@ def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx):
     wb.save(out_path)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Decode a recording's beacon telemetry fields into one .xlsx per detected frame.")
+    parser.add_argument("audio", nargs="?", default=AUDIO,
+                         help=f"path to the .ogg recording (default: {os.path.relpath(AUDIO, HERE)})")
+    parser.add_argument("--frame", type=int, default=None,
+                         help="1-based frame index to decode (default: decode every detected frame)")
+    parser.add_argument("--z-threshold", type=float, default=Z_THRESHOLD,
+                         help=f"frame-detection z-score threshold (default: {Z_THRESHOLD}, calibrated on "
+                              "cut_first3.ogg). For any other recording, run "
+                              "04a_zscore_visualization.py on it first to check where its noise ceiling "
+                              "sits before trusting this default.")
+    return parser.parse_args()
+
+
 def main():
+    global Z_THRESHOLD
+    args = parse_args()
+    Z_THRESHOLD = args.z_threshold
+
     with open(ENUMS_PATH, "r", encoding="utf-8") as fh:
         enums_ctx = json.load(fh)
-
-    y, fs = audio_io.read_audio(AUDIO, expected_fs=FS)
-    bl = baseline.restore_baseline(y, num_iters=7, W=1000)
-    yc = bl["y_comp_final"]     # frame-start detection only; decoding uses raw y (bypass method)
-
-    template = build_header_template()
-    starts, zs = detect_frame_starts(yc, template)
-    print(f"Detected {len(starts)} frame(s): " +
-          ", ".join(f"frame#{i}@{s} (z={z:.2f})" for i, (s, z) in enumerate(zip(starts, zs), start=1)))
-
-    start, z = starts[FRAME_INDEX - 1], zs[FRAME_INDEX - 1]
-    print(f"\nUsing frame#{FRAME_INDEX} at sample={start} (z-score={z:.2f})")
-
-    decode = decode_frame(y, yc, start)
-    print(f"offset threshold theta*={decode['offset_thr']:+.4f}  header err={decode['hdr_err']}/144  "
-          f"A={decode['A']:.4f}  margin=+/-{decode['margin']:.4f}")
-    print(f"CRC (threshold=0 baseline): {'PASS' if decode['crc_baseline'] else 'fail'}   "
-          f"CRC (mixed: theta* in data segs): {'PASS' if decode['crc_mixed'] else 'fail'}")
-
     fields = load_beacon_fields(XLSX_PATH)
     print(f"Loaded {len(fields)} beacon fields from {os.path.basename(XLSX_PATH)} "
           f"(spanning {fields[-1]['offsetbit'] + fields[-1]['bitlen']} bits)")
 
-    seg_counts = decode["seg_counts"]
-    total_ambig = sum(a for a, _ in seg_counts.values())
-    total_bits = sum(n for _, n in seg_counts.values())
-    print(f"Possibly-wrong (red) bits by segment: " +
-          "  ".join(f"{lbl}={a}/{n}" for lbl, (a, n) in seg_counts.items()))
-    print(f"TOTAL possibly-wrong bits: {total_ambig}/{total_bits}")
+    y, fs = audio_io.read_audio(args.audio, expected_fs=FS)
+    bl = baseline.restore_baseline(y, num_iters=7, W=1000)
+    yc = bl["y_comp_final"]     # frame-start detection only; decoding uses raw y (bypass method)
 
-    out_path = os.path.join(OUT_DIR, f"frame{FRAME_INDEX}_beacon_decode.xlsx")
-    write_workbook(out_path, FRAME_INDEX, start, z, decode, fields, enums_ctx)
-    print(f"\nWorkbook saved: {out_path}")
+    template = build_header_template()
+    print(f"Using Z_THRESHOLD={Z_THRESHOLD}")
+    starts, zs = detect_frame_starts(yc, template)
+    print(f"Detected {len(starts)} frame(s) in {os.path.basename(args.audio)}: " +
+          ", ".join(f"frame#{i}@{s} (z={z:.2f})" for i, (s, z) in enumerate(zip(starts, zs), start=1)))
+
+    if args.frame is not None:
+        if not (1 <= args.frame <= len(starts)):
+            raise SystemExit(f"--frame {args.frame} out of range: only {len(starts)} frame(s) detected")
+        frame_indices = [args.frame]
+    else:
+        frame_indices = list(range(1, len(starts) + 1))
+
+    stem = os.path.splitext(os.path.basename(args.audio))[0]
+
+    for frame_no in frame_indices:
+        start, z = starts[frame_no - 1], zs[frame_no - 1]
+        print(f"\n{'=' * 78}\nFrame#{frame_no} at sample={start} (z-score={z:.2f})\n{'=' * 78}")
+
+        decode = decode_frame(y, yc, start)
+        print(f"offset threshold theta*={decode['offset_thr']:+.4f}  header err={decode['hdr_err']}/144  "
+              f"A={decode['A']:.4f}  margin=+/-{decode['margin']:.4f}")
+        print(f"CRC (threshold=0 baseline): {'PASS' if decode['crc_baseline'] else 'fail'}   "
+              f"CRC (mixed: theta* in data segs): {'PASS' if decode['crc_mixed'] else 'fail'}")
+
+        seg_counts = decode["seg_counts"]
+        total_ambig = sum(a for a, _ in seg_counts.values())
+        total_bits = sum(n for _, n in seg_counts.values())
+        print("Possibly-wrong (red) bits by segment: " +
+              "  ".join(f"{lbl}={a}/{n}" for lbl, (a, n) in seg_counts.items()))
+        print(f"TOTAL possibly-wrong bits: {total_ambig}/{total_bits}")
+
+        out_path = os.path.join(OUT_DIR, f"{stem}_frame{frame_no}_beacon_decode.xlsx")
+        write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx)
+        print(f"Workbook saved: {out_path}")
 
 
 if __name__ == "__main__":
