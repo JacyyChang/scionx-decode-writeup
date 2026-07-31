@@ -1,0 +1,212 @@
+options:
+  parameters:
+    author: SCIONX decode writeup
+    catch_exceptions: 'True'
+    category: '[GRC Hier Blocks]'
+    cmake_opt: ''
+    comment: ''
+    copyright: ''
+    description: Feed one known AX.25 frame into gr-satellites' HDLC Deframer twice
+      -- serialized LSB-first and MSB-first -- and see which byte order it accepts.
+    gen_cmake: 'On'
+    gen_linking: dynamic
+    generate_options: no_gui
+    hier_block_src_path: '.:'
+    id: hdlc_bitorder_test
+    max_nouts: '0'
+    output_language: python
+    placement: (0,0)
+    qt_qss_theme: ''
+    realtime_scheduling: ''
+    run: 'True'
+    run_command: '{python} -u {filename}'
+    run_options: run
+    sizing_mode: fixed
+    thread_safe_setters: ''
+    title: HDLC bit-order test (known frame -> HDLC Deframer -> Message Debug)
+    window_size: (1000,1000)
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 8]
+    rotation: 0
+    state: enabled
+
+blocks:
+- name: ax25_wire
+  id: epy_module
+  parameters:
+    alias: ''
+    comment: Builds both candidate on-wire bit streams from the known 272-byte reference
+      payload. Embedded here (rather than imported) so this .grc opens and runs anywhere
+      with no sys.path setup. ax25_wire.py in this folder is the same code as a standalone,
+      independently runnable script.
+    source_code: "# Build the on-wire bit stream for a known AX.25/HDLC frame in\n\
+      # both possible byte-serialization orders. See ax25_wire.py (same folder)\n\
+      # for the fully commented standalone version of this code.\n\nREF = bytes.fromhex(\n\
+      \    \"849c6086aa4060849c60a686b0e103f0\"\n    \"007c083c81336a000201000000000020\"\
+      \n    \"0000002b81336a000000000000030200\"\n    \"0044090020100000c3add00099bf4e04\"\
+      \n    \"8bc5780561d7f608d4a11f0000000000\"\n    \"00000000000000000000000000000000\"\
+      \n    \"00000000000000000000000000000000\"\n    \"00000000000000000000000000000000\"\
+      \n    \"00000000000000000000000000000000\"\n    \"00000000000000000000000000000826\"\
+      \n    \"08260826282620262000200020002000\"\n    \"2000a03d78ff770f9bff8a1f161515e7\"\
+      \n    \"b0b0b0b019181ae80c4002481b180000\"\n    \"00000000000000000000000000000000\"\
+      \n    \"00000000000000000000000000000000\"\n    \"00000000000000000000000000000000\"\
+      \n    \"00000000000000000000000000000000\"\n)\n\n\ndef crc16_x25(data):\n  \
+      \  \"\"\"CRC-16/X.25 (= HDLC FCS), same as scionx/hdlc.py.\"\"\"\n    crc =\
+      \ 0xFFFF\n    for byte in bytes(data):\n        crc ^= byte\n        for _ in\
+      \ range(8):\n            crc = (crc >> 1) ^ 0x8408 if crc & 1 else crc >> 1\n\
+      \    return crc ^ 0xFFFF\n\n\ndef serialize(data, lsb_first):\n    \"\"\"bytes\
+      \ -> unpacked bits. 0x7C becomes 00111110 (LSB-first, AX.25\n    spec) or 01111100\
+      \ (MSB-first).\"\"\"\n    out = []\n    for b in data:\n        for k in (range(8)\
+      \ if lsb_first else range(7, -1, -1)):\n            out.append((b >> k) & 1)\n\
+      \    return out\n\n\ndef bit_stuff(bits):\n    \"\"\"Insert a 0 after every\
+      \ five consecutive 1s (HDLC bit stuffing).\"\"\"\n    out, ones = [], 0\n  \
+      \  for b in bits:\n        out.append(b)\n        ones = ones + 1 if b == 1\
+      \ else 0\n        if ones == 5:\n            out.append(0)\n            ones\
+      \ = 0\n    return out\n\n\ndef build_wire(payload, lsb_first, n_flags=4):\n\
+      \    \"\"\"flags + bit-stuffed(payload + FCS) + flags.\n\n    0x7E is a bit-palindrome,\
+      \ so the flags look identical in both orders and\n    the deframer finds frame\
+      \ boundaries either way -- only the body differs,\n    so the FCS check is what\
+      \ actually discriminates the two orders.\"\"\"\n    fcs = crc16_x25(payload).to_bytes(2,\
+      \ \"little\")\n    body = bit_stuff(serialize(payload + fcs, lsb_first))\n \
+      \   flag = [0, 1, 1, 1, 1, 1, 1, 0]\n    return flag * n_flags + body + flag\
+      \ * n_flags\n\n\nWIRE_LSB = build_wire(REF, lsb_first=True)    # AX.25 spec\
+      \ order\nWIRE_MSB = build_wire(REF, lsb_first=False)   # the other order\n"
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [16, 12]
+    rotation: 0
+    state: true
+- name: hdlc_deframer_lsb
+  id: satellites_hdlc_deframer
+  parameters:
+    affinity: ''
+    alias: ''
+    check_fcs: 'True'
+    comment: ''
+    max_length: '10000'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [432, 152.0]
+    rotation: 0
+    state: true
+- name: hdlc_deframer_msb
+  id: satellites_hdlc_deframer
+  parameters:
+    affinity: ''
+    alias: ''
+    check_fcs: 'True'
+    comment: ''
+    max_length: '10000'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [440, 328.0]
+    rotation: 0
+    state: true
+- name: message_debug_lsb
+  id: blocks_message_debug
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: LSB-first branch output.
+    en_uvec: 'True'
+    log_level: info
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [944, 148.0]
+    rotation: 0
+    state: true
+- name: message_debug_msb
+  id: blocks_message_debug
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: 'MSB-first branch output (expected: stays silent).'
+    en_uvec: 'True'
+    log_level: info
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [976, 324.0]
+    rotation: 0
+    state: true
+- name: note_0
+  id: note
+  parameters:
+    alias: ''
+    comment: ''
+    note: 'EXPECTED RESULT: the LSB-first branch prints one 272-byte PDU starting
+      84 9c 60 86 aa 40 ...; the MSB-first branch prints nothing at all, because its
+      FCS check fails.'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [400, 12]
+    rotation: 0
+    state: true
+- name: vector_source_lsb
+  id: blocks_vector_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Known frame, serialized LSB-first (what the AX.25 spec says).
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    repeat: 'False'
+    tags: '[]'
+    type: byte
+    vector: ax25_wire.WIRE_LSB
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [64, 164]
+    rotation: 0
+    state: true
+- name: vector_source_msb
+  id: blocks_vector_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: Exact same frame, serialized MSB-first instead.
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    repeat: 'False'
+    tags: '[]'
+    type: byte
+    vector: ax25_wire.WIRE_MSB
+    vlen: '1'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [64, 316]
+    rotation: 0
+    state: true
+
+connections:
+- [hdlc_deframer_lsb, out, message_debug_lsb, print]
+- [hdlc_deframer_msb, out, message_debug_msb, print]
+- [vector_source_lsb, '0', hdlc_deframer_lsb, '0']
+- [vector_source_msb, '0', hdlc_deframer_msb, '0']
+
+metadata:
+  file_format: 1
+  grc_version: 3.10.12.0

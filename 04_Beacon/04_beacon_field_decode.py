@@ -18,9 +18,12 @@ Decision rule per bit (one consistent bitstream, no domain-mixing):
     threshold=0 (the same "bypass method" 03b/03c use to get clean alignment;
     see CLAUDE.md/03's README). This fixes which samples are data vs. stuffed
     bits and gives each surviving bit its original sample index.
-  - data1/data2 bits (telemetry content): re-decided using this frame's own
-    header-calibrated fixed offset threshold theta*, exactly like
-    `03b_data_fixed_offset_threshold.py` / `03c_symbol_sync_timing.py`.
+  - header (address/control/PID) + data1/data2 + FCS: re-decided using this
+    frame's own header-calibrated fixed offset threshold theta*, exactly like
+    `03b_data_fixed_offset_threshold.py` / `03c_symbol_sync_timing.py`. theta*
+    was calibrated *from* the header, so applying it there is the same decision
+    rule the reported header error count already reflects; FCS rides along with
+    the data segments per GNURADIO_MIGRATION.md.
   - zero-run1/zero-run2 bits (should be all-0x00 padding): re-decided from
     the baseline-restored `yc` at a plain threshold=0 -- this *is*
     02_zero_run_baseline's "Method 1" (static threshold), used exactly as
@@ -193,18 +196,25 @@ def find_zero_runs(buf, min_len=8):
 
 
 def destuff_with_map(bits, raw_idx):
-    out_bits, out_idx = [], []
+    """HDLC bit destuffing, keeping each surviving bit's original sample index.
+
+    Also returns `dropped_at`: for every stuffed 0 removed, the number of output
+    bits emitted before it -- i.e. the position, in payload-bit coordinates,
+    where that removal happened. `check_frame_alignment` uses it to locate where
+    a mis-destuffed bit first threw the byte alignment off."""
+    out_bits, out_idx, dropped_at = [], [], []
     run = 0
     for b, si in zip(bits, raw_idx):
         if run == 5:
             if b == 0:
                 run = 0
+                dropped_at.append(len(out_bits))
                 continue
             run = 0
         out_bits.append(b)
         out_idx.append(si)
         run = run + 1 if b == 1 else 0
-    return np.array(out_bits, dtype=np.uint8), np.array(out_idx)
+    return np.array(out_bits, dtype=np.uint8), np.array(out_idx), dropped_at
 
 
 def bits_to_bytes(bits):
@@ -237,6 +247,86 @@ def build_segment_map():
     return segments
 
 
+FLAG_BITS = [0, 1, 1, 1, 1, 1, 1, 0]     # 0x7E as it appears on the wire
+REF_N_STUFFED = 8                        # stuffed 0s the reference frame needs (see 05_gnuradio_test/)
+FRAME_END_BIT = 274 * 8                  # 272-byte payload + 2-byte FCS
+TRAIL_BYTES = 16                         # bytes of trailing-flag region to decode and show
+
+
+def find_flag_run(bits, lo, hi, min_run=3):
+    """First position p in [lo,hi) that starts a run of `min_run` back-to-back
+    0x7E flags -- i.e. the start of the trailing idle-flag sequence. Requiring a
+    *run* (not a single match) matters: an isolated 01111110 can occur by chance
+    inside the payload, but flags spaced exactly 8 bits apart cannot."""
+    seq = bits.tolist() if hasattr(bits, "tolist") else list(bits)
+    n = len(seq)
+    for p in range(max(0, lo), min(hi, n - 8 * min_run + 1)):
+        if all(seq[p + 8 * k: p + 8 * k + 8] == FLAG_BITS for k in range(min_run)):
+            return p
+    return None
+
+
+def trailing_expected_pattern(align):
+    """The 8-bit pattern a trailing flag byte should show at payload bit
+    FRAME_END_BIT, given the detected slip. If the frame ends `slip` bits away
+    from where it should, the flags sit at phase (-slip) mod 8 relative to the
+    byte grid, so the expected byte is 0x7E rotated by that much. Falls back to
+    the unrotated flag when no slip could be measured."""
+    slip = align.get("slip_bits")
+    phase = (-slip) % 8 if slip is not None else 0
+    rot = FLAG_BITS[phase:] + FLAG_BITS[:phase]
+    return "".join(map(str, rot))
+
+
+def check_frame_alignment(body_bits_full, dropped_at, segments):
+    """Independent check that the destuffed stream is cut *exactly* at the frame
+    boundary -- i.e. that the 5-consecutive-1s destuffing consumed neither too
+    many nor too few bits on the way through the frame.
+
+    The anchor is structural, not CRC-based: a valid HDLC frame is immediately
+    followed by the closing flag, so bit FRAME_END_BIT of the destuffed stream
+    must be the start of a 0x7E run. If that run starts early or late, the
+    difference is exactly the net number of bits the destuffer got wrong, and
+    every byte boundary after the slip point is shifted.
+
+    Locating *where* it went wrong uses the one region with known content: the
+    zero-run padding is all 0x00, and a stuffed 0 can only ever follow five
+    consecutive 1s -- which cannot occur inside all-zero padding. So any removal
+    landing inside a zero-run is provably spurious (a bit error faked a 5-ones
+    run), and the first one is the first detectable slip. A slip inside a data
+    segment can't be localized this way, since there's no ground truth there --
+    reported honestly as "not localizable" rather than guessed at."""
+    n_avail = body_bits_full.size
+
+    closing_ok, flag_run_start, slip_bits = None, None, None
+    if n_avail >= FRAME_END_BIT + 8:
+        closing_ok = body_bits_full[FRAME_END_BIT:FRAME_END_BIT + 8].tolist() == FLAG_BITS
+        flag_run_start = find_flag_run(body_bits_full, FRAME_END_BIT - 48, FRAME_END_BIT + 128)
+        if flag_run_start is not None:
+            slip_bits = flag_run_start - FRAME_END_BIT
+
+    # zero-run byte ranges, where a stuffed bit is impossible by construction.
+    # Skip the first 8 bits of each: a genuine 5-ones run can straddle in from
+    # the end of the preceding data segment.
+    zero_bit_ranges = [(b0 * 8 + 8, b1 * 8) for lbl, b0, b1 in segments
+                       if lbl.startswith("zero-run")]
+    spurious = [p for p in dropped_at
+                if any(lo <= p < hi for lo, hi in zero_bit_ranges)]
+
+    first_slip_bit = spurious[0] if spurious else None
+    return {
+        "n_stuffed_removed": len(dropped_at),
+        "ref_n_stuffed": REF_N_STUFFED,
+        "closing_flag_ok": closing_ok,
+        "flag_run_start_bit": flag_run_start,
+        "slip_bits": slip_bits,
+        "n_spurious_removals": len(spurious),
+        "first_slip_bit": first_slip_bit,
+        "first_slip_byte": (first_slip_bit // 8) if first_slip_bit is not None else None,
+        "aligned": bool(closing_ok) and slip_bits == 0,
+    }
+
+
 def calibrate_offset_threshold(y, start):
     t_bits = np.array(bits_lsb_first(FLAGS4) + bits_lsb_first(HEADER_ADDR), dtype=np.uint8)
     idx_hdr = start + SPS * np.arange(0, 144) + PHASE
@@ -262,17 +352,29 @@ def decode_frame(y, yc, start):
     idx_all = idx_all[idx_all < y.size]
     body_bits_raw = (y[idx_all[32:]] > 0).astype(np.uint8)     # skip the 4 leading flags; threshold=0 structure pass
     body_idx_raw = idx_all[32:]
-    body_bits, body_sample_idx = destuff_with_map(body_bits_raw, body_idx_raw)
+    body_bits_full, body_idx_full, dropped_at = destuff_with_map(body_bits_raw, body_idx_raw)
 
-    n_bits = min(body_bits.size, 274 * 8)
-    body_bits = body_bits[:n_bits]
-    body_sample_idx = body_sample_idx[:n_bits]
+    segments = build_segment_map()
+    # Alignment check needs the stream *past* the frame end (that's where the
+    # closing flag lives), so run it before truncating to the frame.
+    align = check_frame_alignment(body_bits_full, dropped_at, segments)
+
+    # Keep TRAIL_BYTES past the frame end as well: the trailing flags are known
+    # content (0x7E repeated), so unlike data1/data2 they can be eyeballed
+    # against a correct answer. Bit stuffing never touches a flag (the 6th
+    # consecutive 1 resets the run instead of inserting a 0), so what the
+    # destuffer emits here is the raw decided bits, untouched.
+    n_bits = min(body_bits_full.size, FRAME_END_BIT + TRAIL_BYTES * 8)
+    body_bits = body_bits_full[:n_bits]
+    body_sample_idx = body_idx_full[:n_bits]
 
     seg_label = np.empty(n_bits, dtype=object)
-    for label, b0, b1 in build_segment_map():
+    for label, b0, b1 in segments:
         bit0, bit1 = b0 * 8, min(b1 * 8, n_bits)
         if bit0 < bit1:
             seg_label[bit0:bit1] = label
+    if n_bits > FRAME_END_BIT:
+        seg_label[FRAME_END_BIT:n_bits] = "trailing-flag"
 
     is_zero_run = np.array([lbl is not None and lbl.startswith("zero-run") for lbl in seg_label])
     is_theta = ~is_zero_run    # address + data1/data2 + FCS: same theta*-decision domain
@@ -308,7 +410,8 @@ def decode_frame(y, yc, start):
         "decided_bit": decided_bit, "ambiguous": ambiguous, "seg_label": seg_label,
         "offset_thr": offset_thr, "hdr_err": hdr_err, "A": A, "margin": margin,
         "crc_baseline": crc_baseline, "crc_mixed": crc_mixed, "n_bits": n_bits,
-        "seg_counts": seg_counts,
+        "seg_counts": seg_counts, "align": align,
+        "bits_thr0": body_bits,          # the plain threshold=0 pass, kept for comparison
     }
 
 
@@ -494,6 +597,7 @@ SEGMENT_FILLS = {
     "data2":     PatternFill("solid", fgColor="FFFBE0E0"),   # light pink  -- telemetry
     "zero-run2": PatternFill("solid", fgColor="FFE1E1E1"),   # slightly darker light gray -- expected all-0x00 padding
     "FCS":       PatternFill("solid", fgColor="FFE6DFF7"),   # light purple -- 2-byte CRC-16/X.25
+    "trailing-flag": PatternFill("solid", fgColor="FFDFF3E6"),  # light green -- 0x7E idle flags after the frame
     "mixed":     PatternFill("solid", fgColor="FFFFF3B0"),   # light yellow -- field straddles a segment boundary
 }
 
@@ -538,7 +642,7 @@ def segment_fill_for_range(seg_label_slice):
     return SEGMENT_FILLS["mixed"], "+".join(labels)
 
 
-def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx):
+def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx, audio_path):
     decided_bit = decode["decided_bit"]
     ambiguous = decode["ambiguous"]
     seg_label = decode["seg_label"]
@@ -553,20 +657,50 @@ def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx):
     ws = wb.active
     ws.title = f"Frame{frame_no}_Beacon"
 
+    align = decode["align"]
+    # Info-field bit offset of the first detected slip (the table is indexed from
+    # the Info field, the alignment check from the payload), or None.
+    slip_info_bit = None
+    if align["first_slip_bit"] is not None:
+        slip_info_bit = align["first_slip_bit"] - INFO_BYTE0 * 8
+
     headers = ["Subsystem", "ItemName", "OffsetBit", "BitLen", "Bits", "ReadableValue", "LookupTable"]
     legend = ("Red text = data/header/FCS: near decision line (|y-theta*|<=" + f"{decode['margin']:.3f}"
               ") | zero-run: decided-as-1 (should be 0x00).  "
               "Row shading = segment: blue=header(Dest/Src/Control/PID) peach=data1 pink=data2 "
-              "gray=zero-run1/2 purple=FCS yellow=straddles a segment boundary.")
+              "gray=zero-run1/2 purple=FCS green=trailing 0x7E flags yellow=straddles a segment "
+              "boundary.")
     ws.append([legend])
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
     ws.cell(1, 1).font = Font(italic=True, size=9)
+
+    # Alignment banner -- if the frame isn't cut exactly at the closing flag, say
+    # so loudly at the top, because it means byte boundaries drift mid-frame.
+    if align["aligned"]:
+        banner = (f"ALIGNMENT OK: closing flag 0x7E starts exactly at payload bit {FRAME_END_BIT} "
+                  f"(byte 274) -- destuffing consumed exactly the right bits, byte boundaries "
+                  f"below are trustworthy.")
+        banner_font = Font(bold=True, size=9, color="FF006600")
+    else:
+        slip = align["slip_bits"]
+        where = (f"first detectable slip at payload byte {align['first_slip_byte']}"
+                 if align["first_slip_byte"] is not None
+                 else "slip not localizable (it falls inside a data segment, where there is no "
+                      "known-content anchor to detect it)")
+        banner = (f"ALIGNMENT FAILED: closing flag 0x7E is {slip:+d} bits from where it should be "
+                  f"(payload bit {FRAME_END_BIT}) -- destuffing lost/gained bits mid-frame, so byte "
+                  f"boundaries DRIFT from that point on and rows past it are shifted. {where}.")
+        banner_font = Font(bold=True, size=9, color="FFCC0000")
+    ws.append([banner])
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
+    ws.cell(2, 1).font = banner_font
+
     ws.append(headers)
     for c in range(1, len(headers) + 1):
-        cell = ws.cell(2, c)
+        cell = ws.cell(3, c)
         cell.font = Font(bold=True)
         cell.fill = HEADER_FILL
-    ws.freeze_panes = "A3"
+    ws.freeze_panes = "A4"
 
     # ---- Header block (Dest/Src address, Control, PID -- payload byte[0,16), all known/fixed) ----
     # Shown so APID's own starting point (Info bit 0 = payload byte 16) can be checked against
@@ -598,6 +732,8 @@ def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx):
 
     # ---- Info field, one row per beacon field (OffsetBit order) ----
     n_missing = 0
+    slip_marked = False          # only the first field at/after the slip gets the marker
+    slip_row, slip_field_name = None, None
     for f in fields:
         b0, b1 = f["offsetbit"], f["offsetbit"] + f["bitlen"]
         fill, seg_name = segment_fill_for_range(info_seg[b0:min(b1, n_avail)]) if b0 < n_avail \
@@ -618,8 +754,21 @@ def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx):
             readable = format_readable(value, raw_unsigned, parsed_enum, transform)
 
         item_display = "(reserved)" if f["item_name"] == "NaN" else f["item_name"]
-        append_row(ws, [f["subsystem"], item_display, f["offsetbit"], f["bitlen"], None, readable, lookup_text],
-                   bits_str, ambig_slice, fill)
+
+        # Mark the first field at or after the detected slip: everything from
+        # here down sits on shifted byte boundaries.
+        if slip_info_bit is not None and not slip_marked and b1 > slip_info_bit:
+            lookup_text = (f"<<< BYTE ALIGNMENT SLIPS AT OR BEFORE THIS FIELD "
+                           f"(payload byte {align['first_slip_byte']}) -- rows from here down are shifted >>> "
+                           + lookup_text)
+            slip_marked = True
+            slip_field_name = item_display
+
+        r = append_row(ws, [f["subsystem"], item_display, f["offsetbit"], f["bitlen"], None,
+                            readable, lookup_text], bits_str, ambig_slice, fill)
+        if slip_marked and slip_row is None:
+            slip_row = r
+            ws.cell(r, 7).font = Font(bold=True, color="FFCC0000")
 
     # ---- FCS (2-byte CRC-16/X.25, appended after the 272-byte payload) ----
     fcs_bits = decided_bit[272 * 8:274 * 8]
@@ -632,6 +781,37 @@ def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx):
     append_row(ws, ["FCS", "FCS (CRC-16/X.25, little-endian)", 272 * 8, 16, None,
                     f"0x{transmitted_crc:04X}", crc_note],
                "".join(str(int(b)) for b in fcs_bits), fcs_ambig, SEGMENT_FILLS["FCS"])
+
+    # ---- Trailing flags (known content: 0x7E repeated) ----
+    # Decoded with exactly the same rule as FCS/data (theta*, same red band), but
+    # unlike data1/data2 the correct answer IS known here -- which makes this the
+    # only ground truth at the *end* of the frame (the header is ground truth at
+    # the start). The expectation is the flag rotated by the detected slip, not a
+    # naive 01111110: with a known -3 bit slip, comparing against phase 0 would
+    # report bogus errors on bits that are actually correct.
+    expected_trail = trailing_expected_pattern(align)
+    trail_thr0 = decode["bits_thr0"]
+    trail_err_theta = trail_err_thr0 = trail_n = 0
+    for k in range(TRAIL_BYTES):
+        b0, b1 = FRAME_END_BIT + k * 8, FRAME_END_BIT + k * 8 + 8
+        if b1 > decided_bit.size:
+            break
+        bits_str = "".join(str(int(b)) for b in decided_bit[b0:b1])
+        thr0_str = "".join(str(int(b)) for b in trail_thr0[b0:b1])
+        ambig = ambiguous[b0:b1]
+        e_theta = sum(1 for a, e in zip(bits_str, expected_trail) if a != e)
+        e_thr0 = sum(1 for a, e in zip(thr0_str, expected_trail) if a != e)
+        trail_err_theta += e_theta
+        trail_err_thr0 += e_thr0
+        trail_n += 8
+        byte_val = bits_to_bytes(decided_bit[b0:b1])[0]
+        note = (f"expect {expected_trail} (0x7E at the detected slip phase) -> "
+                f"{'OK' if e_theta == 0 else f'{e_theta}/8 differ'};  "
+                f"same bits at plain threshold=0: {thr0_str} -> "
+                f"{'OK' if e_thr0 == 0 else f'{e_thr0}/8 differ'}")
+        append_row(ws, ["TRAILING", f"trailing flag byte {k}", b0, 8, None,
+                        f"0x{byte_val:02X}", note],
+                   bits_str, ambig, SEGMENT_FILLS["trailing-flag"])
 
     # ---- Summary row: total possibly-wrong (red) bits across the whole frame ----
     seg_counts = decode["seg_counts"]
@@ -646,6 +826,17 @@ def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx):
     ws.cell(r + 1, 1).value = f"Breakdown: {breakdown}"
     ws.cell(r + 1, 1).font = Font(italic=True, size=9)
     ws.merge_cells(start_row=r + 1, start_column=1, end_row=r + 1, end_column=7)
+    ws.cell(r + 2, 1).value = (
+        f"Frame alignment: stuffed 0s removed = {align['n_stuffed_removed']} "
+        f"(reference frame needs {align['ref_n_stuffed']});  "
+        f"closing flag 0x7E at payload bit {align['flag_run_start_bit']} "
+        f"(expected {FRAME_END_BIT}, slip = {align['slip_bits']:+d} bits)"
+        if align["slip_bits"] is not None else
+        f"Frame alignment: stuffed 0s removed = {align['n_stuffed_removed']}; "
+        f"closing flag not found near the frame end")
+    ws.cell(r + 2, 1).font = Font(italic=True, size=9,
+                                   color="FF006600" if align["aligned"] else "FFCC0000")
+    ws.merge_cells(start_row=r + 2, start_column=1, end_row=r + 2, end_column=7)
 
     widths = {"A": 12, "B": 30, "C": 10, "D": 8, "E": 36, "F": 26, "G": 60}
     for col, w in widths.items():
@@ -663,12 +854,23 @@ def write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx):
         ("margin_abs", round(decode["margin"], 5)),
         ("crc_pass_threshold0_baseline", decode["crc_baseline"]),
         ("crc_pass_mixed_threshold", decode["crc_mixed"]),
+        ("z_threshold_used", Z_THRESHOLD),
+        ("align_stuffed_removed", align["n_stuffed_removed"]),
+        ("align_stuffed_reference", align["ref_n_stuffed"]),
+        ("align_closing_flag_ok", align["closing_flag_ok"]),
+        ("align_flag_run_start_bit", align["flag_run_start_bit"]),
+        ("align_expected_flag_bit", FRAME_END_BIT),
+        ("align_slip_bits", align["slip_bits"]),
+        ("align_spurious_removals", align["n_spurious_removals"]),
+        ("align_first_slip_payload_byte", align["first_slip_byte"]),
+        ("align_first_slip_field", slip_field_name),
+        ("align_ok", align["aligned"]),
         ("info_bits_recovered", int(n_avail)),
         ("info_bits_expected", INFO_NBYTES * 8),
         ("fields_with_missing_bits", n_missing),
         ("total_ambiguous_bits", total_ambig),
         ("total_bits_all_segments", total_bits),
-        ("audio_file", os.path.relpath(AUDIO, HERE)),
+        ("audio_file", audio_path),
         ("xlsx_source", os.path.relpath(XLSX_PATH, HERE)),
         ("enums_source", os.path.relpath(ENUMS_PATH, HERE)),
     ]
@@ -748,8 +950,54 @@ def main():
               "  ".join(f"{lbl}={a}/{n}" for lbl, (a, n) in seg_counts.items()))
         print(f"TOTAL possibly-wrong bits: {total_ambig}/{total_bits}")
 
+        a = decode["align"]
+        if a["aligned"]:
+            print(f"Frame alignment: OK -- closing flag 0x7E starts exactly at payload bit "
+                  f"{FRAME_END_BIT} ({a['n_stuffed_removed']} stuffed 0s removed)")
+        else:
+            print(f"Frame alignment: FAILED -- stuffed 0s removed={a['n_stuffed_removed']} "
+                  f"(reference needs {a['ref_n_stuffed']}), closing flag at payload bit "
+                  f"{a['flag_run_start_bit']} vs expected {FRAME_END_BIT} "
+                  f"(slip={a['slip_bits']:+d} bits)"
+                  if a["slip_bits"] is not None else
+                  f"Frame alignment: FAILED -- closing flag not found near the frame end")
+            if a["first_slip_byte"] is not None:
+                print(f"  -> first detectable slip at payload byte {a['first_slip_byte']} "
+                      f"({a['n_spurious_removals']} provably-spurious removal(s) inside zero-run "
+                      f"padding); rows past it are on shifted byte boundaries")
+            else:
+                print("  -> slip not localizable: it falls inside a data segment, where there is "
+                      "no known-content anchor to detect it")
+
+        # Trailing flags are known content (0x7E), so print them for eyeballing:
+        # the one stretch after the header where the slicer can be checked
+        # against a correct answer -- and the only one at the END of the frame.
+        db, amb, thr0 = decode["decided_bit"], decode["ambiguous"], decode["bits_thr0"]
+        expect = trailing_expected_pattern(a)
+        print(f"Trailing 0x7E flags after FCS -- known content, so this is ground truth at the "
+              f"END of the frame.\n  Expected pattern = {expect} (0x7E rotated to the detected "
+              f"slip phase). '!' = differs, '*' = near decision line.")
+        print(f"  {'payload bit':>11} {'byte':>4} | {'theta* (as FCS/data)':^20} | {'threshold=0':^11} | errors")
+        e_theta = e_thr0 = 0
+        for k in range(TRAIL_BYTES):
+            b0, b1 = FRAME_END_BIT + k * 8, FRAME_END_BIT + k * 8 + 8
+            if b1 > db.size:
+                break
+            bs = "".join(str(int(v)) for v in db[b0:b1])
+            s0 = "".join(str(int(v)) for v in thr0[b0:b1])
+            marks = "".join("!" if x != e else ("*" if m else " ")
+                            for x, e, m in zip(bs, expect, amb[b0:b1]))
+            n1 = sum(1 for x, e in zip(bs, expect) if x != e)
+            n0 = sum(1 for x, e in zip(s0, expect) if x != e)
+            e_theta += n1
+            e_thr0 += n0
+            print(f"  {b0:>11} {b0//8:>4} | {bs} {marks} | {s0}  | theta*={n1}  thr0={n0}")
+        print(f"  TOTAL over {TRAIL_BYTES} bytes: theta* = {e_theta} bits off, "
+              f"threshold=0 = {e_thr0} bits off")
+
         out_path = os.path.join(OUT_DIR, f"{stem}_frame{frame_no}_beacon_decode.xlsx")
-        write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx)
+        write_workbook(out_path, frame_no, start, z, decode, fields, enums_ctx,
+                       os.path.relpath(args.audio, HERE))
         print(f"Workbook saved: {out_path}")
 
 

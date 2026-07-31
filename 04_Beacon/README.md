@@ -107,44 +107,78 @@ exact matching order). Coverage is partial -- many fields have no match and
 fall back to the raw decoded number with no lookup. Treat this column as a
 **reference aid, not an authoritative decode**.
 
+## Frame-alignment self-check (independent of CRC)
+
+Steps 2 and 5 both assume the destuffed stream is cut **exactly** at the frame
+boundary -- that the 5-consecutive-1s rule consumed neither too many nor too
+few bits on the way through. If it didn't, every byte boundary after the slip
+point is shifted, and the field table silently reads the wrong bits. CRC can't
+tell you *where* that happened (it just fails), so the decoder runs a separate
+structural check:
+
+**The anchor**: a valid HDLC frame is immediately followed by the closing flag.
+So payload bit $274\times8 = 2192$ of the destuffed stream must be the start of
+a `0x7E` run. The check looks for a run of at least 3 back-to-back flags (an
+isolated `01111110` can occur by chance inside the payload; flags spaced
+*exactly* 8 bits apart cannot), and reports
+
+$$\text{slip} = (\text{flag run start}) - 2192$$
+
+which is exactly the net number of bits the destuffing got wrong.
+
+**Locating the slip**: the zero-run padding is all `0x00`, and a stuffed 0 can
+only ever follow five consecutive 1s -- which cannot occur inside all-zero
+padding. So any removal landing inside a zero-run is *provably* spurious (a bit
+error faked a 5-ones run), and the first one is the first detectable slip. A
+slip inside a data segment can't be localized this way, since there's no known
+content there to check against; that case is reported as "not localizable"
+rather than guessed at.
+
+The result appears in three places: a banner at the top of the sheet, a red
+`<<< BYTE ALIGNMENT SLIPS AT OR BEFORE THIS FIELD >>>` marker on the first
+affected field row, and the `align_*` keys in the `Frame_Info` sheet.
+
 ## Scripts
 
 | Script | Output |
 |---|---|
-| `04a_zscore_visualization.py` | Plots the frame-detection z-score curve for a whole recording against $Z_{\text{th}}$, printing the noise ceiling and its margin to the threshold: `Figure/04a_zscore_<audio stem>.png` |
+| `04a_zscore_visualization.py` | Plots the frame-detection z-score curve for a whole recording against $Z_{\text{th}}$: `Figure/04a_zscore_<audio stem>.png` |
 | `04_beacon_field_decode.py` | Decodes every frame detected in a recording (default: `../Data/cut_first3.ogg`, all 3 frames) against `SCIONX_TLMnew.xlsx`; writes one workbook per frame: `Output/<audio stem>_frame<N>_beacon_decode.xlsx` |
 
 Both scripts share the same frame-detection code (step 1 above) and take a
 recording path as their first positional argument, so neither is hardcoded
 to `cut_first3.ogg`.
 
-## Workflow for a new recording: check the threshold before trusting detection
+## Workflow for a new recording: look at the plot, then pick a threshold
 
-$Z_{\text{th}}=12.0$ was calibrated on `cut_first3.ogg` alone, where it
-happens to sit very comfortably above the noise: noise ceiling 4.25, margin
-7.75. That margin is **not** a general property of the detector -- run on
-the full-pass recording this clip was cut from
-(`satnogs_14459039_2026-07-07T09-57-46.ogg`, 303s vs. 35.5s), the noise
-ceiling comes out to **11.96**, just **0.04** below the same 12.0 threshold.
-Same detector, same constant, wildly different safety margin -- because a
-longer recording simply has more chances for a noise spike to land near the
-template's correlation peak.
+$Z_{\text{th}}=12.0$ was calibrated on `cut_first3.ogg` alone and **does not
+carry over to other recordings**. On the full-length SatNOGS pass this clip
+was cut from (`satnogs_14459039_2026-07-07T09-57-46.ogg`, 303s vs. 35.5s),
+that same 12.0 lands in the middle of the real frame population and misses
+several frames that a lower threshold picks up cleanly.
 
-So for any recording that isn't `cut_first3.ogg`, check first, decode second:
+So for any recording that isn't `cut_first3.ogg`, plot first, decode second:
 
 ```bash
 pip install numpy matplotlib soundfile openpyxl
 
-# 1. Check where the threshold sits for this specific recording
+# 1. Plot this recording's z-score curve and look at Figure/04a_zscore_<stem>.png
 python 04a_zscore_visualization.py path/to/other.ogg
-# -> read the printed noise-ceiling / margin numbers (and the plot) --
-#    if the margin to the noise ceiling looks too thin, or too many/few
-#    frames got flagged, retry with a different --z-threshold:
-python 04a_zscore_visualization.py path/to/other.ogg --z-threshold 13.5
 
-# 2. Decode using whichever threshold you settled on in step 1
-python 04_beacon_field_decode.py path/to/other.ogg --z-threshold 13.5
+# 2. Pick a threshold that cleanly separates the peaks from the background,
+#    and re-plot to confirm it catches what you expect
+python 04a_zscore_visualization.py path/to/other.ogg --z-threshold 10.5
+
+# 3. Decode with the threshold you settled on
+python 04_beacon_field_decode.py path/to/other.ogg --z-threshold 10.5
 ```
+
+The plot is the thing to trust here: real frame peaks are tall, narrow and
+visually obvious against the background, so where to put the line is easier
+to see than to compute. A useful cross-check once frames are detected: this
+satellite beacons on a fixed cadence (~561035 samples between frames in
+`cut_first3.ogg`), so a correct threshold tends to yield starts spaced at
+integer multiples of that.
 
 ## Key findings (all 3 frames in `cut_first3.ogg`)
 
@@ -170,6 +204,27 @@ python 04_beacon_field_decode.py path/to/other.ogg --z-threshold 13.5
   and the low red-bit counts above mean most of each frame is being decided
   *confidently*, just not all of it *correctly*. Low decision-confidence
   alone doesn't explain the CRC failures.
+- **None of the 3 frames are byte-aligned all the way to the end** -- the
+  closing flag never lands on payload bit 2192:
+
+  | Frame | stuffed 0s removed | closing flag at | slip | first detectable slip |
+  |---|---|---|---|---|
+  | #1 | 13 | bit 2196 | **+4 bits** | payload byte 144 |
+  | #2 | 11 | bit 2189 | **−3 bits** | payload byte 144 |
+  | #3 | 8 | bit 2209 | **+17 bits** | payload byte 111 |
+
+  (the reference frame needs exactly **8** stuffed 0s, so frames #1/#2 are
+  removing extra bits that aren't really stuffing). The trailing flags are
+  clearly there -- they come in runs spaced exactly 8 bits apart -- just not
+  where a correctly destuffed 274-byte frame would put them. Bit errors in the
+  data segments fake five-consecutive-1s runs, the destuffer drops a 0 that
+  was never stuffed, and the byte grid shifts from that point on.
+
+  **This matters more than the per-bit confidence numbers above**: it means the
+  field table is trustworthy only up to the first slip, and where that is
+  differs frame to frame. It also plausibly explains the CRC failures on its
+  own -- a frame whose byte boundaries drift mid-way cannot produce a matching
+  FCS no matter how confidently the individual symbols were sliced.
 
 ## Tips for judging content correctness by eye
 
@@ -185,6 +240,10 @@ on hand while applying the three rules of thumb below:
 - purple = FCS
 - yellow = field straddles a segment boundary (2 of 205 fields)
 
+0. **Check the alignment banner at the top of the sheet first.** If it says
+   ALIGNMENT FAILED, only the rows *above* the red slip marker sit on correct
+   byte boundaries -- everything below it is reading shifted bits, and no amount
+   of per-bit scrutiny will fix that.
 1. **data1/data2 are where the review effort belongs.** This is the segment
    type with the least reliable signal (`03`'s "invisible curve" asymmetry
    drift, 2-7% of decisions flipping with the threshold) -- header and

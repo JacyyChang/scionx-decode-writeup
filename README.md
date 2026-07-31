@@ -66,15 +66,22 @@ colored so it's visible at a glance which decoded values are trustworthy.
 Frame detection works the same way as 01/02/03 and isn't hardcoded to
 `cut_first3.ogg`, so it can be pointed at any other recording of this
 satellite too -- but the detection threshold (`Z_THRESHOLD`) is: it was only
-ever calibrated on `cut_first3.ogg`, where the noise floor sits a comfortable
-7.75 below it. A companion script, `04a_zscore_visualization.py`, plots that
-margin for any recording; running it on the full-length SatNOGS pass
-`cut_first3.ogg` was itself cut from showed the same threshold sitting just
-0.04 above that recording's noise ceiling -- close enough that both scripts
-now take a `--z-threshold` override, and the recommended workflow is to check
-with `04a` before decoding a new recording with `04_beacon_field_decode.py`.
-See [`04_Beacon/README.md`](04_Beacon/README.md) for details and example
-output.
+ever calibrated on `cut_first3.ogg` and doesn't carry over. A companion
+script, `04a_zscore_visualization.py`, plots the detection z-score curve for
+any recording so the right threshold can simply be read off the plot; both
+scripts take a `--z-threshold` override, and the recommended workflow is to
+plot with `04a` first, then decode with `04_beacon_field_decode.py`. See
+[`04_Beacon/README.md`](04_Beacon/README.md) for details and example output.
+
+## GNU Radio tests (`05_gnuradio_test/`)
+
+[`05_gnuradio_test/`](05_gnuradio_test/) is a testing folder rather than a
+diagnostic one: it builds signals whose correct answer is known in advance and
+runs them through real GNU Radio blocks, to check assumptions the rest of the
+repo relies on. **GNU Radio is required here** (that's the point) -- everything
+outside this folder stays dependency-light. The first test settles which bit
+order AX.25 uses on the wire, by feeding one known frame into gr-satellites'
+`HDLC Deframer` serialized both ways and seeing which one passes FCS.
 
 ## How to run
 
