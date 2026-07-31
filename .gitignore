@@ -23,5 +23,8 @@ Thumbs.db
 # --- Claude Code working notes (not for publishing) ---
 CLAUDE.md
 
+# --- Personal-reference translations (not for the public/English repo) ---
+README.zh-TW.md
+
 # NOTE: Figure/*.png, Output/*.xlsx, and Data/*.ogg are intentionally kept
 # (tracked), they are the example outputs and the shared recording.
