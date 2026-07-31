@@ -52,17 +52,6 @@ channel/ISI has caused the signal to drift).
 0100: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 ```
 
-## Correction (2026-07-10, Step 1): no +2/+4 offset
-
-An earlier note claiming "frame#2 needs a +4 bit offset to align the header"
-turned out to be **an artifact of comparing against the post-destuff
-payload**. Comparing at the raw slicer bits level (before destuffing) with a
-correctly reconstructed reference (LSB-first + bit-stuffing), the header in
-frame#2 **aligns precisely at offset=0**, with only 3 low-confidence bits
-wrong. (See the internal project history for details -- not included in this
-package.) **So any comparison must be done at the raw bits level, not
-against the post-destuff payload.**
-
 ## Usage (further directions)
 
 1. **Alignment comparison**: reconstruct the reference on-wire bits and align
