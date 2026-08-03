@@ -27,13 +27,13 @@ CLAUDE.md
 README.zh-TW.md
 
 # --- GRC build artifacts: grcc/GRC-GUI generate these from a .grc, don't track them ---
-05_gnuradio_test/hdlc_bitorder_test.py
-05_gnuradio_test/hdlc_bitorder_test_*.py
-05_gnuradio_test/*_epy_block_*.py
-05_gnuradio_test/hdlc_check.grc
-05_gnuradio_test/hdlc_check.py
-05_gnuradio_test/hdlc_check_*.py
-05_gnuradio_test/hdlc check.py
+appendix_gnuradio/hdlc_bitorder_test.py
+appendix_gnuradio/hdlc_bitorder_test_*.py
+appendix_gnuradio/*_epy_block_*.py
+appendix_gnuradio/hdlc_check.grc
+appendix_gnuradio/hdlc_check.py
+appendix_gnuradio/hdlc_check_*.py
+appendix_gnuradio/hdlc check.py
 
 # --- 04_Beacon/Output: only the cut_first3.ogg example workbooks are tracked;
 #     outputs from other recordings (e.g. satnogs_*.ogg) stay local-only ---

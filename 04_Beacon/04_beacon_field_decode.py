@@ -248,7 +248,7 @@ def build_segment_map():
 
 
 FLAG_BITS = [0, 1, 1, 1, 1, 1, 1, 0]     # 0x7E as it appears on the wire
-REF_N_STUFFED = 8                        # stuffed 0s the reference frame needs (see 05_gnuradio_test/)
+REF_N_STUFFED = 8                        # stuffed 0s the reference frame needs (see appendix_gnuradio/)
 FRAME_END_BIT = 274 * 8                  # 272-byte payload + 2-byte FCS
 TRAIL_BYTES = 16                         # bytes of trailing-flag region to decode and show
 

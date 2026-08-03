@@ -1,4 +1,4 @@
-# 05 — GNU Radio tests: checking our assumptions against a real implementation
+# Appendix: GNU Radio tests -- checking our assumptions against a real implementation
 
 ## What this is about
 
@@ -15,7 +15,7 @@ the point. Run it with a Python that has `gnuradio` + `gr-satellites`
 
 | File | Content |
 |---|---|
-| `05_hdlc_bitorder_test.grc` | Flowgraph: two Vector Sources (the same known frame, serialized two different ways) -> two HDLC Deframers -> two Message Debugs |
+| `hdlc_bitorder_test.grc` | Flowgraph: two Vector Sources (the same known frame, serialized two different ways) -> two HDLC Deframers -> two Message Debugs |
 | `ax25_wire.py` | Standalone, GNU-Radio-free version of the frame builder used by the flowgraph. Run it on its own to see what the two bit orders look like. |
 
 ## Test 1: which bit order does AX.25 actually use on the wire?
@@ -72,15 +72,15 @@ fields MSB-first out of that stream returns each byte bit-reversed.
 Open the flowgraph in GNU Radio Companion and press Run:
 
 ```bash
-cd 05_gnuradio_test
-gnuradio-companion 05_hdlc_bitorder_test.grc
+cd appendix_gnuradio
+gnuradio-companion hdlc_bitorder_test.grc
 ```
 
 or generate and run it headlessly:
 
 ```bash
-cd 05_gnuradio_test
-grcc -o . 05_hdlc_bitorder_test.grc      # writes hdlc_bitorder_test.py
+cd appendix_gnuradio
+grcc -o . hdlc_bitorder_test.grc      # writes hdlc_bitorder_test.py
 python hdlc_bitorder_test.py
 ```
 

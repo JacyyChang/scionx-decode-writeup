@@ -73,9 +73,9 @@ scripts take a `--z-threshold` override, and the recommended workflow is to
 plot with `04a` first, then decode with `04_beacon_field_decode.py`. See
 [`04_Beacon/README.md`](04_Beacon/README.md) for details and example output.
 
-## GNU Radio tests (`05_gnuradio_test/`)
+## GNU Radio tests (`appendix_gnuradio/`)
 
-[`05_gnuradio_test/`](05_gnuradio_test/) is a testing folder rather than a
+[`appendix_gnuradio/`](appendix_gnuradio/) is a testing folder rather than a
 diagnostic one: it builds signals whose correct answer is known in advance and
 runs them through real GNU Radio blocks, to check assumptions the rest of the
 repo relies on. **GNU Radio is required here** (that's the point) -- everything

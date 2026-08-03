@@ -15,7 +15,9 @@ it accepts (FCS pass) and returns as the original bytes is the on-wire order.
 
 This is a pure-numpy/stdlib module with no GNU Radio import, so it can be
 sanity-checked on its own (`python ax25_wire.py`); the flowgraph
-`05_hdlc_bitorder_test.grc` imports WIRE_LSB / WIRE_MSB from it.
+`hdlc_bitorder_test.grc` embeds this same logic in its own Python Module
+block (rather than importing this file) so it stays self-contained with no
+`sys.path` setup -- see that file's README for why.
 
 Frame built here = REFERENCE_FRAME.md's 272-byte ground-test payload, which is
 also the decode oracle the rest of the repo scores against.
@@ -117,5 +119,5 @@ if __name__ == "__main__":
     print(f"  LSB-first on the wire : {lsb}")
     print(f"  MSB-first on the wire : {msb}")
     print()
-    print("Run 05_hdlc_bitorder_test.grc (or its generated .py) to see which one")
+    print("Run hdlc_bitorder_test.grc (or its generated .py) to see which one")
     print("gr-satellites' hdlc_deframer actually accepts.")
