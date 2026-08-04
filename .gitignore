@@ -44,3 +44,12 @@ appendix_gnuradio/hdlc check.py
 # NOTE: Figure/*.png, Data/*.ogg, and 04_Beacon/Output/cut_first3_*.xlsx are
 # intentionally kept (tracked), they are the example outputs and the shared
 # recording.
+
+# --- New diagnostic recordings, not (yet) promoted to shared example status ---
+Data/satnogs_14674078_2026-08-03T07-50-10.ogg
+Data/satnogs_14691956_2026-08-04T00-17-40.ogg
+
+# --- 01a/01b are diagnostic/exploratory tools -- their output figures are
+#     working files, not canonical example outputs like 01_frame*.png ---
+01_frame_detection/Figure/01a_overview_*
+01_frame_detection/Figure/01b_candidate*
