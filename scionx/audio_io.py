@@ -14,7 +14,7 @@ samples is always channel 0, cast to a 1D float64 array.
 import numpy as np
 
 
-def read_audio(path, expected_fs=None):
+def read_audio(path, expected_fs=None, start_sec=None, end_sec=None):
     """
     Read an audio file -> (samples, fs). samples is 1D float64 (channel 0 of
     a multi-channel file).
@@ -23,6 +23,14 @@ def read_audio(path, expected_fs=None):
         path         audio file path (.ogg/.wav/..., format is detected by soundfile)
         expected_fs  if given and it doesn't match the file's sample rate, print
                      a warning (not enforced)
+        start_sec    if given, only decode from this time onward (seconds,
+                     clamped to [0, file duration]) -- for long recordings,
+                     this is what actually saves time: soundfile seeks and
+                     decodes just the requested range instead of the whole
+                     file, rather than reading everything and slicing after.
+        end_sec      if given, stop decoding at this time (seconds); None = to
+                     end of file. Both None (the default) preserves the exact
+                     old behavior: read the entire file, no probing step.
 
     Raises: ImportError with a hint if soundfile isn't installed (tells the
             caller to `pip install soundfile`, or use read_raw_f32 instead).
@@ -35,7 +43,14 @@ def read_audio(path, expected_fs=None):
             "or use read_raw_f32 to read a pre-decoded .f32 file instead."
         ) from exc
 
-    data, fs = sf.read(path, dtype="float64", always_2d=True)
+    if start_sec is not None or end_sec is not None:
+        info = sf.info(path)
+        n_total = info.frames
+        start = max(0, int((start_sec or 0.0) * info.samplerate))
+        stop = n_total if end_sec is None else min(n_total, int(end_sec * info.samplerate))
+        data, fs = sf.read(path, start=start, stop=stop, dtype="float64", always_2d=True)
+    else:
+        data, fs = sf.read(path, dtype="float64", always_2d=True)
     samples = np.asarray(data[:, 0], dtype=np.float64)   # take channel 0
     if expected_fs is not None and fs != expected_fs:
         print(f"[audio_io] warning: file sample rate {fs} Hz differs from "

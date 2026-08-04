@@ -28,6 +28,7 @@ Verified on `Data/cut_first3.ogg` (3 known frames): detection lands exactly on
 the three known starts 235719 / 796789 / 1357824, with no false positives.
 """
 
+import argparse
 import os
 import sys
 
@@ -169,9 +170,9 @@ def bits_to_bytes(bits):
     return bytes(out)
 
 
-def plot_frame(plt, y, yc, start, frame_no, z_score):
+def plot_frame(plt, y, yc, start, frame_no, z_score, out_name):
     """Draw a single frame's structure map + byte boundary labels, saved as
-    Figure/01_frame{frame_no}.png."""
+    Figure/<out_name>."""
     span_j1 = int(SEARCH_SAMPLES / SPS)
     body_bits_raw, body_idx_raw = slice_bits(yc, start, 32, span_j1)
     body_bits, body_sample_idx = destuff_with_map(body_bits_raw, body_idx_raw)
@@ -284,7 +285,7 @@ def plot_frame(plt, y, yc, start, frame_no, z_score):
                  f" structure map + payload byte boundary labels"
                  f" (for comparison against REFERENCE_FRAME.md's hex dump; whole-payload BER={100*err.sum()/n:.1f}%)")
     ax.legend(loc="lower right", fontsize=7, ncol=2)
-    p = save(fig, os.path.join("Figure", f"01_frame{frame_no}.png"))
+    p = save(fig, os.path.join("Figure", out_name))
     plt.close(fig)
 
     print(f"\n[Frame #{frame_no}] start sample={start}  z-score={z_score:.2f}")
@@ -294,9 +295,24 @@ def plot_frame(plt, y, yc, start, frame_no, z_score):
         print(f"  byte {byte_idx:4d} (0x{byte_idx:02x})  ->  sample {s}")
 
 
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("audio", nargs="?", default=AUDIO,
+                   help=f"path to the .ogg recording (default: {os.path.relpath(AUDIO, HERE)})")
+    p.add_argument("--z-threshold", type=float, default=Z_THRESHOLD,
+                   help=f"frame-detection z-score threshold (default: {Z_THRESHOLD}) -- "
+                        "calibrated on cut_first3.ogg only, see 04_Beacon's 04a_zscore_visualization.py "
+                        "for picking one on a different recording")
+    return p.parse_args()
+
+
 def main():
+    global Z_THRESHOLD
+    args = parse_args()
+    Z_THRESHOLD = args.z_threshold
+
     plt = setup_mpl()
-    y, fs = audio_io.read_audio(AUDIO, expected_fs=FS)
+    y, fs = audio_io.read_audio(args.audio, expected_fs=FS)
     bl = baseline.restore_baseline(y, num_iters=7, W=1000)
     yc = bl["y_comp_final"]
 
@@ -309,8 +325,16 @@ def main():
         print(f"  frame#{i}: sample={s}  z-score={z:.2f}")
     print("=" * 78)
 
+    # cut_first3.ogg keeps its original bare filenames (Figure/01_frame1.png, ...,
+    # already tracked/referenced by name in this folder's README); any other
+    # recording gets its stem worked in, so runs against different files don't
+    # clobber each other or the tracked cut_first3 example outputs.
+    stem = os.path.splitext(os.path.basename(args.audio))[0]
+    name_fn = ((lambda i: f"01_frame{i}.png") if stem == "cut_first3"
+               else (lambda i: f"01_{stem}_frame{i}.png"))
+
     for i, (s, z) in enumerate(zip(starts, zs), start=1):
-        plot_frame(plt, y, yc, s, i, z)
+        plot_frame(plt, y, yc, s, i, z, name_fn(i))
 
 
 if __name__ == "__main__":

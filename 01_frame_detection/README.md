@@ -120,11 +120,39 @@ and number them frame#1, frame#2, frame#3, ...
 | Script | Output |
 |---|---|
 | `01_frame_detection.py` | Automatically detects every frame in the recording, saving one figure per frame: `Figure/01_frame1.png`, `Figure/01_frame2.png`, `Figure/01_frame3.png`... (numbered in order of sample position) |
+| `01a_waveform_power_overview.py` | Fast first look at a NEW recording, before running the real detector above: raw waveform + block-wise RMS power envelope over time, to eyeball where candidate bursts are. Does no baseline restoration or frame detection, so it stays fast even on multi-minute files. `Figure/01a_overview_<audio stem>[_<start>-<end>s].png` |
 
 Verified on `Data/cut_first3.ogg` (known to contain 3 frames): detection
 lands exactly on the three known starts 235719 / 796789 / 1357824, with
 z-scores around 12-13, far above the noise floor (z<5), and no false
 positives.
+
+### `01a`: for long recordings, narrow the range with `--start`/`--end`
+
+```bash
+python 01a_waveform_power_overview.py path/to/long.ogg                    # whole file, prints its duration
+python 01a_waveform_power_overview.py path/to/long.ogg --start 30 --end 90   # just 30-90s
+```
+
+`--start`/`--end` are seconds, passed straight through to
+`scionx.audio_io.read_audio`'s `start_sec`/`end_sec` (soundfile seeks and
+decodes only that range, rather than reading the whole file and slicing
+after -- narrowing the range actually skips decode work, not just plot
+work). The waveform panel is also min/max-decimated to `--max-points`
+columns (default 6000) regardless of range length, so even a whole-file plot
+stays fast; short bursts survive the decimation because both the min and the
+max of each column are kept, not just one sample per bucket.
+
+**Caveat found on a real long recording**
+(`satnogs_14674078_2026-08-03T07-50-10.ogg`, 606s): AFSK is a constant-
+envelope modulation, so the RMS power panel can come back essentially FLAT
+for the entire file, whether or not real packets are present -- amplitude
+alone doesn't distinguish "signal" from "just noise/idle carrier" the way it
+would for an OOK/on-off signal. A brief dip (not a raised plateau) usually
+means a receiver dropout, not a packet. Treat this script as an orientation
+tool (how long is the file, are there any obvious anomalies), not a
+substitute for `01_frame_detection.py`'s correlation-based detector, which
+looks at the header's actual bit structure rather than raw amplitude.
 
 ## Key findings
 
