@@ -15,6 +15,7 @@ field (payload byte `[16,272)`, 256 bytes / 2048 bits -- see
 |---|---|
 | `SCIONX_TLMnew.xlsx` | Field layout: one row per telemetry field (`Subsystem`, `ItemName`, `DataType`, `BitLen`, `OffsetBit`, `Endian`, `LongDescription`), 205 fields, tightly packed, `OffsetBit` cumulative from 0 = the Info field's first bit |
 | `SCIONX_enums.json` | Enum tables (`enums`), unit/scale conversions (`transforms`), and regex-based name-to-lookup rules (`nameRules`) for a subset of the fields |
+| `scionx_destuff_demo.xlsx` | Hand-built, standalone teaching example (33 synthetic bits, no script/audio dependency): a RawBits sheet with per-bit ExcludeThisBit/FlipThisBit dropdowns feeding a Destuffed sheet that auto-realigns and scores against a known-true sequence. Validates the interactive destuff mechanism that `04d_destuff_interactive.py` then scales up to a real ~2200-bit raw stream |
 | `Output/` | Generated workbooks (not regenerated automatically -- re-run the relevant script to refresh) |
 | `Figure/` | Generated `04a_zscore_<audio stem>.png` plots |
 
@@ -144,10 +145,14 @@ affected field row, and the `align_*` keys in the `Frame_Info` sheet.
 |---|---|
 | `04a_zscore_visualization.py` | Plots the frame-detection z-score curve for a whole recording against $Z_{\text{th}}$: `Figure/04a_zscore_<audio stem>.png` |
 | `04_beacon_field_decode.py` | Decodes every frame detected in a recording (default: `../Data/cut_first3.ogg`, all 3 frames) against `SCIONX_TLMnew.xlsx`; writes one workbook per frame: `Output/<audio stem>_frame<N>_beacon_decode.xlsx` |
+| `04b_stuffing_events.py` | Lists every bit-stuffing removal event for one frame with enough context (waveform window, segment, low-confidence check) to manually judge genuine-vs-spurious; console output only, no workbook |
+| `04c_raw_bits_no_destuff.py` | Same pipeline as `04_beacon_field_decode.py` but with destuffing skipped entirely, as an independent cross-check of where byte alignment actually drifts: `Output/<audio stem>_frame<N>_raw_no_destuff.xlsx` |
+| `04d_destuff_interactive.py` | Turns `scionx_destuff_demo.xlsx`'s mechanism into a real, ~2200-raw-bit interactive workbook for one frame (default frame 2): a RawBits sheet with ExcludeThisBit/FlipThisBit dropdowns (all default "No" -- nothing pre-filled), live-connected to a Beacon Decode field view and a bit-serial CRC-16/X.25 check computed with Excel formulas. `Output/<audio stem>_frame<N>_destuff_interactive.xlsx` |
+| `04d_destuff_interactive_ver2.py` | Experimental fork of `04d_destuff_interactive.py`, kept side by side on purpose: same data, but the "things shift as you destuff" idea is shown by making the compacted/destuffed-position sheet visible (source row slides under a fixed position) instead of keeping RawBits' rows fixed and sliding their field labels. `Output/<audio stem>_frame<N>_destuff_interactive_ver2.xlsx` |
 
-Both scripts share the same frame-detection code (step 1 above) and take a
-recording path as their first positional argument, so neither is hardcoded
-to `cut_first3.ogg`.
+All scripts share the same frame-detection code (step 1 above) and take a
+recording path as their first positional argument, so none of them are
+hardcoded to `cut_first3.ogg`.
 
 ## Workflow for a new recording: look at the plot, then pick a threshold
 
