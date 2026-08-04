@@ -185,6 +185,61 @@ satellite beacons on a fixed cadence (~561035 samples between frames in
 `cut_first3.ogg`), so a correct threshold tends to yield starts spaced at
 integer multiples of that.
 
+## Interactive destuff workflow: 04a -> 04b -> 04d
+
+The three scripts above (`04a`, `04b`, `04d`/`04d_ver2`) are meant to be run
+in that order, as one pipeline, not independently:
+
+```bash
+# 1. Confirm how many frames are in the recording and settle on a z-threshold
+#    (same step as "Workflow for a new recording" above -- for cut_first3.ogg
+#    itself, the default 12.0 / 3 frames already works, so this is mostly a
+#    sanity check, not a real search).
+python 04a_zscore_visualization.py path/to/audio.ogg --z-threshold 12.0
+
+# 2. See how many bit-stuffing removal events 04b's own (independent, no-
+#    destuff) pass finds for the frame you care about, and the context
+#    around each one (waveform window, segment, low-confidence check).
+python 04b_stuffing_events.py path/to/audio.ogg --frame 2 --z-threshold 12.0
+
+# 3. Generate the interactive workbook with the SAME frame/threshold.
+python 04d_destuff_interactive.py path/to/audio.ogg --frame 2 --z-threshold 12.0
+```
+
+Step 2 isn't strictly required to run step 3 (04d does its own offset search
+independently), but it's worth doing first: it gives you an independent
+count and rough location for how many stuffed bits to expect, which is
+useful context once you're inside the workbook second-guessing individual
+`CandidateStuffPoint` flags in step 5 below.
+
+Once the workbook is open, judging RawBits is a manual process (04d
+deliberately leaves every `ExcludeThisBit`/`FlipThisBit` at "No" -- see its
+own `使用說明` sheet -- rather than guessing for you):
+
+4. **Check the trailing rows first, to gauge how far off you currently are.**
+   The last ~40 rows of RawBits (`SegmentGuess`="trailing") sit past the
+   payload+FCS boundary, where the signal should just be repeating `0x7E`
+   (`01111110`) closing flags. Scan for where that 8-bit pattern actually
+   starts: if it lines up immediately, your stuffing/flip choices so far are
+   probably consistent with the true frame length; if it's offset by N bits,
+   that's roughly how many more stuff-bit judgments are still wrong (an
+   un-excluded real stuff bit shifts everything after it by 1 bit; an extra
+   excluded bit that shouldn't have been shifts it back by 1) -- a cheap,
+   whole-frame sanity check before you go hunting bit-by-bit.
+5. **Decide each `CandidateStuffPoint`/`LowConfidence` flag on its own
+   merits, using the segment it's in.** For a candidate inside a zero-run
+   segment specifically, the same rule of thumb as "Tips for judging content
+   correctness by eye" below applies to whether a "1" belongs there at all:
+   a "1" with several other "1"s nearby is more likely genuinely part of the
+   signal (leave it, and don't be too eager to call the run-of-5 a stuff
+   point); an isolated lone "1" with no neighbors is much more likely a
+   decision error worth flipping. Outside zero-run (header/data1/data2), lean
+   on `CandidateStuffPoint`'s own live signal (only fires on an actual
+   run of 5 ones in the current `RawBitValue` column) plus whether
+   `ReadableValue` in the Beacon Decode sheet looks physically sane after you
+   commit to a choice -- see 04d's own `使用說明` sheet for the full
+   reasoning and the CRC-16/X.25 check that's the final arbiter either way.
+
 ## Key findings (all 3 frames in `cut_first3.ogg`)
 
 - **The header decodes exactly right in all 3 frames**: Dest Address =
