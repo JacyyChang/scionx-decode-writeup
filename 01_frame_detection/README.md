@@ -121,6 +121,7 @@ and number them frame#1, frame#2, frame#3, ...
 |---|---|
 | `01_frame_detection.py` | Automatically detects every frame in the recording, saving one figure per frame: `Figure/01_frame1.png`, `Figure/01_frame2.png`, `Figure/01_frame3.png`... (numbered in order of sample position) |
 | `01a_waveform_power_overview.py` | Fast first look at a NEW recording, before running the real detector above: raw waveform + block-wise RMS power envelope over time, to eyeball where candidate bursts are. Does no baseline restoration or frame detection, so it stays fast even on multi-minute files. `Figure/01a_overview_<audio stem>[_<start>-<end>s].png` |
+| `01b_weak_signal_candidate_scan.py` | Two-stage candidate scan for frames too weak for `01_frame_detection.py`'s coherent correlation to catch: stage 1 finds windows whose mean power sits well below the local median (a matched filter sized to one frame's duration, not a naive per-block threshold -- see below); stage 2 scores each survivor's zero-crossing-interval structure against a same-length noise control window. Prints a ranked candidate table to the console and saves `Figure/01b_candidate<rank>_<audio stem>.png` for the top few |
 
 Verified on `Data/cut_first3.ogg` (known to contain 3 frames): detection
 lands exactly on the three known starts 235719 / 796789 / 1357824, with
@@ -154,6 +155,41 @@ tool (how long is the file, are there any obvious anomalies), not a
 substitute for `01_frame_detection.py`'s correlation-based detector, which
 looks at the header's actual bit structure rather than raw amplitude.
 
+### `01b`: catching frames too weak for the coherent correlation detector
+
+`01_frame_detection.py`'s 144-symbol correlation needs every symbol in phase
+to accumulate gain; at low SNR that gain collapses to the noise floor even
+when cropped tightly around a real packet (verified on
+`satnogs_14674078_2026-08-03T07-50-10.ogg`: max z=5.1 across the whole 606s
+recording, indistinguishable from "no frame here"). `01b` looks for
+independent, cheaper evidence instead of coherent phase alignment:
+
+```bash
+python 01b_weak_signal_candidate_scan.py path/to/long.ogg
+python 01b_weak_signal_candidate_scan.py path/to/long.ogg --dip-ratio 0.6 --top 15
+```
+
+Stage 1 computes block-wise RMS over the whole recording (no baseline
+restoration -- the fast, coarse pass) and slides a window sized to one
+frame's duration (`--window`, default matches `cut_first3.ogg`'s own
+0.400s), looking for windows whose MEAN power sits below `--dip-ratio` times
+the LOCAL median (chunked, not global, to tolerate slow AGC/elevation
+drift). This has to be a windowed mean, not "every block in a run must
+individually be below threshold": AFSK's own tone-driven envelope wobbles in
+and out of any fixed ratio block to block, even inside a real frame -- a
+naive per-block threshold finds ZERO candidates in `cut_first3.ogg`'s 3
+known-good frames, which is why this is a matched filter instead (verified
+to recover all 3, within 11ms of their true starts, before trusting it on
+new data). Stage 2 crops tightly around each stage-1 survivor, runs real
+baseline restoration on just that small window, and checks whether
+zero-crossing intervals cluster at multiples of SPS the way real AFSK
+symbols do, scored relative to a same-length noise window immediately
+before the candidate (self-calibrating per recording, since an absolute
+fraction threshold doesn't transfer across different SNRs). Nothing here
+decodes a frame -- it only narrows down where to point
+`01_frame_detection.py`'s own correlation search (optionally at a lower
+`--z-threshold`) or `04_Beacon/`'s tools next.
+
 ## Key findings
 
 - **Frame detection is quite accurate**: the 3 starts caught by the z-score
@@ -166,6 +202,14 @@ looks at the header's actual bit structure rather than raw amplitude.
   error rate of the data segments (real telemetry content) is still high
   (15-43%), which is the problem `03_data_segment_processing/` is meant to
   address.
+- **`01b`'s two-stage scan found a plausible weak candidate that the coherent
+  detector completely misses**: on `satnogs_14674078_2026-08-03T07-50-10.ogg`
+  (606s, z-score detector finds nothing anywhere, max z=5.1), `01b` at
+  `--dip-ratio` 0.45 through 0.75 consistently returns exactly ONE
+  candidate, at t=183.52s, depth-ratio 0.45 -- squarely inside the
+  known-good range (0.44-0.52) measured on `cut_first3.ogg`'s 3 real frames.
+  Not yet confirmed by CRC or a successful decode, but a strong enough lead
+  to be worth pointing the rest of the pipeline at.
 
 ## How to run
 

@@ -205,5 +205,5 @@ processes frame#1 (a full 3-frame x 125-config sweep is the point where
 GNU Radio's block-scheduling overhead per run starts to matter):
 
 ```bash
-C:\Users\USER\radioconda\python.exe 03c_symbol_sync_timing.py
+path/to/radioconda/python.exe 03c_symbol_sync_timing.py
 ```

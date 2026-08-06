@@ -24,9 +24,6 @@ Thumbs.db
 CLAUDE.md
 doc/
 
-# --- Personal-reference translations (not for the public/English repo) ---
-README.zh-TW.md
-
 # --- GRC build artifacts: grcc/GRC-GUI generate these from a .grc, don't track them ---
 appendix_gnuradio/hdlc_bitorder_test.py
 appendix_gnuradio/hdlc_bitorder_test_*.py

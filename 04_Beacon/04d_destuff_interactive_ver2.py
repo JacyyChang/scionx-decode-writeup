@@ -1158,9 +1158,11 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("audio", nargs="?", default=AUDIO,
                    help=f"path to the .ogg recording (default: {os.path.relpath(AUDIO, HERE)})")
-    p.add_argument("--frame", type=int, default=2,
-                   help="1-based frame index to build the workbook for (default: 2, the frame "
-                        "REFERENCE_FRAME.md's alignment note was written against)")
+    p.add_argument("--frame", type=int, default=None,
+                   help="1-based frame index to build the workbook for (default: build one "
+                        "workbook per detected frame, same convention as 04_beacon_field_decode.py "
+                        "/ 04c). Frame 2 is the one REFERENCE_FRAME.md's alignment note was "
+                        "written against, if you only want one.")
     p.add_argument("--z-threshold", type=float, default=Z_THRESHOLD,
                    help=f"frame-detection z-score threshold (default: {Z_THRESHOLD})")
     return p.parse_args()
@@ -1179,13 +1181,19 @@ def main():
     starts, zs = detect_frame_starts(yc, template)
     print(f"Detected {len(starts)} frame(s): " +
           ", ".join(f"frame#{i}@{s} (z={z:.2f})" for i, (s, z) in enumerate(zip(starts, zs), start=1)))
-    if not (1 <= args.frame <= len(starts)):
-        raise SystemExit(f"--frame {args.frame} out of range: only {len(starts)} frame(s) detected")
 
-    start = starts[args.frame - 1]
+    if args.frame is not None:
+        if not (1 <= args.frame <= len(starts)):
+            raise SystemExit(f"--frame {args.frame} out of range: only {len(starts)} frame(s) detected")
+        frame_indices = [args.frame]
+    else:
+        frame_indices = list(range(1, len(starts) + 1))
+
     stem = os.path.splitext(os.path.basename(args.audio))[0]
-    out_path = os.path.join(OUT_DIR, f"{stem}_frame{args.frame}_destuff_interactive_ver2.xlsx")
-    build_workbook(out_path, args.frame, y, yc, start)
+    for frame_no in frame_indices:
+        start = starts[frame_no - 1]
+        out_path = os.path.join(OUT_DIR, f"{stem}_frame{frame_no}_destuff_interactive_ver2.xlsx")
+        build_workbook(out_path, frame_no, y, yc, start)
 
 
 if __name__ == "__main__":
