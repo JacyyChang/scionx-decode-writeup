@@ -42,9 +42,14 @@ appendix_gnuradio/hdlc check.py
 # intentionally kept (tracked), they are the example outputs and the shared
 # recording.
 
-# --- New diagnostic recordings, not (yet) promoted to shared example status ---
-Data/satnogs_14674078_2026-08-03T07-50-10.ogg
-Data/satnogs_14691956_2026-08-04T00-17-40.ogg
+# --- Recordings: default to local-only, allow-list the shared ones.
+#     Deliberately default-deny: new diagnostic .ogg files keep getting added
+#     during investigation, and listing them one at a time meant new ones sat
+#     un-ignored (and one `git add -A` away from being published by accident).
+#     To share a new recording, add an explicit `!` exception below. ---
+Data/*.ogg
+!Data/cut_first3.ogg
+!Data/satnogs_14459039_2026-07-07T09-57-46.ogg
 
 # --- 01a/01b are diagnostic/exploratory tools -- their output figures are
 #     working files, not canonical example outputs like 01_frame*.png ---
