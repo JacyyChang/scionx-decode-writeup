@@ -2,7 +2,7 @@
 
 ## Background
 
-This is a **AFSK/1200bps** audio recording (`.ogg`) of a CubeSat
+This is a **GFSK/9600bps** audio recording (`.ogg`) of a CubeSat
 (SCIONX/RANGE A) downlink, downloaded from the
 [SatNOGS Network](https://network.satnogs.org/) (a crowd-sourced open
 satellite ground station network), from which we need to decode
