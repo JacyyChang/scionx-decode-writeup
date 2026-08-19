@@ -145,7 +145,7 @@ stays fast; short bursts survive the decimation because both the min and the
 max of each column are kept, not just one sample per bucket.
 
 **Caveat found on a real long recording**
-(`satnogs_14674078_2026-08-03T07-50-10.ogg`, 606s): AFSK is a constant-
+(`satnogs_14674078_2026-08-03T07-50-10.ogg`, 606s): GFSK is a constant-
 envelope modulation, so the RMS power panel can come back essentially FLAT
 for the entire file, whether or not real packets are present -- amplitude
 alone doesn't distinguish "signal" from "just noise/idle carrier" the way it
@@ -175,15 +175,18 @@ frame's duration (`--window`, default matches `cut_first3.ogg`'s own
 0.400s), looking for windows whose MEAN power sits below `--dip-ratio` times
 the LOCAL median (chunked, not global, to tolerate slow AGC/elevation
 drift). This has to be a windowed mean, not "every block in a run must
-individually be below threshold": AFSK's own tone-driven envelope wobbles in
+individually be below threshold": the signal's own envelope wobbles in
 and out of any fixed ratio block to block, even inside a real frame -- a
 naive per-block threshold finds ZERO candidates in `cut_first3.ogg`'s 3
 known-good frames, which is why this is a matched filter instead (verified
 to recover all 3, within 11ms of their true starts, before trusting it on
-new data). Stage 2 crops tightly around each stage-1 survivor, runs real
-baseline restoration on just that small window, and checks whether
-zero-crossing intervals cluster at multiples of SPS the way real AFSK
-symbols do, scored relative to a same-length noise window immediately
+new data; this was originally attributed to AFSK's two audio tones -- see
+`01b_weak_signal_candidate_scan.py`'s `BLOCK_MS` comment -- the empirical
+finding stands but the GFSK mechanism hasn't been re-derived). Stage 2 crops
+tightly around each stage-1 survivor, runs real baseline restoration on just
+that small window, and checks whether zero-crossing intervals cluster at
+multiples of SPS the way real GFSK symbols do, scored relative to a
+same-length noise window immediately
 before the candidate (self-calibrating per recording, since an absolute
 fraction threshold doesn't transfer across different SNRs). Nothing here
 decodes a frame -- it only narrows down where to point

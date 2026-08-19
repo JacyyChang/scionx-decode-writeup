@@ -10,7 +10,7 @@ runs `baseline.restore_baseline`'s iterative decision-directed pass (needed
 for correct symbol decisions, but not needed just to see WHERE the bursts
 are). For a brand new, possibly multi-minute recording, that's the wrong
 first step -- you want a cheap plot to orient yourself (how many bursts, how
-long, do they even look like a 1200bps AFSK packet) before spending time on
+long, do they even look like a 9600bps GFSK packet) before spending time on
 the real per-frame pipeline. This script does no baseline restoration at all
 and no frame detection; it's purely "what does this file look like".
 
@@ -95,8 +95,8 @@ def minmax_decimate(y, fs, max_points, no_decimate_below_s):
 
 def power_envelope(y, fs, window_ms):
     """Block-wise RMS power (linear, then also returned in dB) -- one value
-    per window, no overlap. window_ms=20 at 48kHz is ~960 samples, i.e. ~24
-    AFSK 1200bps symbol periods per block: coarse enough to be fast and show
+    per window, no overlap. window_ms=20 at 48kHz is ~960 samples, i.e. ~192
+    GFSK 9600bps symbol periods per block: coarse enough to be fast and show
     burst boundaries clearly, fine enough not to blur separate short bursts
     together."""
     win = max(1, int(fs * window_ms / 1000))

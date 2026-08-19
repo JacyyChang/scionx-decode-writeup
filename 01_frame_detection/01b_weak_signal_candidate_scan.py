@@ -29,7 +29,7 @@ Combining independent, cheaper evidence first is the way around that:
   Stage 2 (score_symbol_structure): for each stage-1 candidate only, run the
   real baseline.restore_baseline on just that small window (cheap now that
   it's not the whole file) and check whether zero-crossing intervals cluster
-  at multiples of SPS the way real AFSK symbols do, scored RELATIVE to a
+  at multiples of SPS the way real GFSK symbols do, scored RELATIVE to a
   same-length noise control window immediately before the candidate (so this
   self-calibrates per-recording instead of relying on an absolute threshold
   that may not transfer between recordings/SNRs).
@@ -70,9 +70,11 @@ AUDIO = os.path.join(os.path.dirname(HERE), "Data", "cut_first3.ogg")
 
 FRAME_DURATION_S = 19211 / FS   # known cut_first3 frame length, ~0.400s -- the duration a real dip should be near
 BLOCK_MS = 20.0                  # RMS block size for stage 1 -- must be coarse enough to average OVER a
-                                  # symbol period's own tone-driven amplitude wobble (AFSK's 1200/2200Hz
-                                  # tones alone make raw RMS fluctuate a lot cycle-to-cycle at finer
-                                  # resolutions -- 5ms was tried first and fragmented even the 3 KNOWN-GOOD
+                                  # symbol period's own amplitude wobble (originally attributed to AFSK's
+                                  # 1200/2200Hz tones; recording is actually GFSK/9600 -- see README's
+                                  # modulation note -- so that mechanism doesn't apply, but the empirical
+                                  # finding below hasn't been re-checked under the corrected model)
+                                  # -- 5ms was tried first and fragmented even the 3 KNOWN-GOOD
                                   # cut_first3.ogg frames into many sub-threshold-duration pieces, finding
                                   # ZERO candidates there; this is a mandatory sanity check, see main())
 LOCAL_MEDIAN_CHUNK_S = 10.0     # window for the "local" (not global) median power, to tolerate slow AGC/elevation drift
@@ -115,8 +117,8 @@ def find_power_dips(y, fs, dip_ratio, window_s):
     """Stage 1: find window_s-long windows whose MEAN RMS is well below the
     local median. Deliberately NOT "every single block in a run must
     individually be below threshold" -- that was tried first and finds ZERO
-    candidates even in cut_first3.ogg's 3 KNOWN-GOOD frames, because AFSK's
-    own tone-driven envelope wobbles in and out of any fixed ratio from
+    candidates even in cut_first3.ogg's 3 KNOWN-GOOD frames, because the
+    signal's own envelope wobbles in and out of any fixed ratio from
     block to block (verified: even 20ms blocks swing between ~0.3 and ~0.8
     of the local median WITHIN a single real frame -- there's no genuinely
     flat-bottomed dip to threshold block-by-block). Averaging over a window

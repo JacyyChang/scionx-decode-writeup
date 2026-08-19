@@ -6,7 +6,7 @@
 
 ## 背景
 
-這是一份 **AFSK/1200bps** 的音訊錄音（`.ogg`），內容是一顆 CubeSat
+這是一份 **GFSK/9600bps** 的音訊錄音（`.ogg`），內容是一顆 CubeSat
 （SCIONX/RANGE A）的下行訊號，從 [SatNOGS Network](https://network.satnogs.org/)
 （一個群眾外包的開放衛星地面站網路）下載下來的，我們需要從裡面解出
 **HDLC/AX.25 frame**。已知這份錄音裡含有 2-3 個完整的 frame（其中一個的
