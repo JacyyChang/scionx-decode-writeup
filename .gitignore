@@ -55,3 +55,10 @@ Data/*.ogg
 #     working files, not canonical example outputs like 01_frame*.png ---
 01_frame_detection/Figure/01a_overview_*
 01_frame_detection/Figure/01b_candidate*
+
+# --- appendix_gnuradio raw IQ captures: too large for git (hundreds of MB),
+#     user has repeatedly said to skip them. Figure/ here is all dev/test
+#     plot_capture output, not curated examples referenced by name in any
+#     README, so it's exploratory the same way 01a/01b's figures are. ---
+appendix_gnuradio/Data/*.cs16
+appendix_gnuradio/Figure/*
