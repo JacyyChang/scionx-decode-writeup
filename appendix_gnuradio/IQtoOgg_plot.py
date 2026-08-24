@@ -90,48 +90,20 @@ class IQtoOgg_plot(gr.top_block, Qt.QWidget):
         # Variables
         ##################################################
         self.samp_rate = samp_rate = 100000
+        self.cs16_path = cs16_path = r"D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Data\20260720_220206_100000_98266_x.cs16"
         self.variable_low_pass_filter_taps_0_2 = variable_low_pass_filter_taps_0_2 = firdes.low_pass(1.0, samp_rate, 15000, 1000, window.WIN_HAMMING, 6.76)
+        self.rec_stem = rec_stem = "_".join(cs16_path.replace("\\", "/").rsplit("/", 1)[-1].split("_")[:2])
         self.n_capture = n_capture = 60*100000
 
         ##################################################
         # Blocks
         ##################################################
 
-        self.qtgui_waterfall_sink_x_0 = qtgui.waterfall_sink_c(
-            1024, #size
-            window.WIN_BLACKMAN_hARRIS, #wintype
-            0, #fc
-            samp_rate, #bw
-            "", #name
-            1, #number of inputs
-            None # parent
-        )
-        self.qtgui_waterfall_sink_x_0.set_update_time(0.10)
-        self.qtgui_waterfall_sink_x_0.enable_grid(False)
-        self.qtgui_waterfall_sink_x_0.enable_axis_labels(True)
-
-
-
-        labels = ['', '', '', '', '',
-                  '', '', '', '', '']
-        colors = [0, 0, 0, 0, 0,
-                  0, 0, 0, 0, 0]
-        alphas = [1.0, 1.0, 1.0, 1.0, 1.0,
-                  1.0, 1.0, 1.0, 1.0, 1.0]
-
-        for i in range(1):
-            if len(labels[i]) == 0:
-                self.qtgui_waterfall_sink_x_0.set_line_label(i, "Data {0}".format(i))
-            else:
-                self.qtgui_waterfall_sink_x_0.set_line_label(i, labels[i])
-            self.qtgui_waterfall_sink_x_0.set_color_map(i, colors[i])
-            self.qtgui_waterfall_sink_x_0.set_line_alpha(i, alphas[i])
-
-        self.qtgui_waterfall_sink_x_0.set_intensity_range(-40, 0)
-
-        self._qtgui_waterfall_sink_x_0_win = sip.wrapinstance(self.qtgui_waterfall_sink_x_0.qwidget(), Qt.QWidget)
-
-        self.top_layout.addWidget(self._qtgui_waterfall_sink_x_0_win)
+        self.rational_resampler_xxx_0 = filter.rational_resampler_fff(
+                interpolation=12,
+                decimation=25,
+                taps=[],
+                fractional_bw=0)
         self.qtgui_time_sink_x_0 = qtgui.time_sink_f(
             1024, #size
             samp_rate, #samp_rate
@@ -180,57 +152,23 @@ class IQtoOgg_plot(gr.top_block, Qt.QWidget):
 
         self._qtgui_time_sink_x_0_win = sip.wrapinstance(self.qtgui_time_sink_x_0.qwidget(), Qt.QWidget)
         self.top_layout.addWidget(self._qtgui_time_sink_x_0_win)
-        self.qtgui_freq_sink_x_0 = qtgui.freq_sink_c(
-            1024, #size
-            window.WIN_BLACKMAN_hARRIS, #wintype
-            0, #fc
-            samp_rate, #bw
-            "", #name
-            1,
-            None # parent
-        )
-        self.qtgui_freq_sink_x_0.set_update_time(0.10)
-        self.qtgui_freq_sink_x_0.set_y_axis((-140), 10)
-        self.qtgui_freq_sink_x_0.set_y_label('Relative Gain', 'dB')
-        self.qtgui_freq_sink_x_0.set_trigger_mode(qtgui.TRIG_MODE_FREE, 0.0, 0, "")
-        self.qtgui_freq_sink_x_0.enable_autoscale(False)
-        self.qtgui_freq_sink_x_0.enable_grid(False)
-        self.qtgui_freq_sink_x_0.set_fft_average(1.0)
-        self.qtgui_freq_sink_x_0.enable_axis_labels(True)
-        self.qtgui_freq_sink_x_0.enable_control_panel(False)
-        self.qtgui_freq_sink_x_0.set_fft_window_normalized(False)
-
-
-
-        labels = ['', '', '', '', '',
-            '', '', '', '', '']
-        widths = [1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1]
-        colors = ["blue", "red", "green", "black", "cyan",
-            "magenta", "yellow", "dark red", "dark green", "dark blue"]
-        alphas = [1.0, 1.0, 1.0, 1.0, 1.0,
-            1.0, 1.0, 1.0, 1.0, 1.0]
-
-        for i in range(1):
-            if len(labels[i]) == 0:
-                self.qtgui_freq_sink_x_0.set_line_label(i, "Data {0}".format(i))
-            else:
-                self.qtgui_freq_sink_x_0.set_line_label(i, labels[i])
-            self.qtgui_freq_sink_x_0.set_line_width(i, widths[i])
-            self.qtgui_freq_sink_x_0.set_line_color(i, colors[i])
-            self.qtgui_freq_sink_x_0.set_line_alpha(i, alphas[i])
-
-        self._qtgui_freq_sink_x_0_win = sip.wrapinstance(self.qtgui_freq_sink_x_0.qwidget(), Qt.QWidget)
-        self.top_layout.addWidget(self._qtgui_freq_sink_x_0_win)
         self.plotcap_iq = gr_plot_capture.plot_capture(
             dtype='complex', samp_rate=samp_rate, nsamples=n_capture,
             skip=0, mode='spec', sps=0, nfft=1024,
-            out_dir='Figure', prefix='iq', title='',
+            out_dir='Figure', prefix=rec_stem, title='',
             save_npy=False)
         self.freq_xlating_fir_filter_xxx_0_0_0 = filter.freq_xlating_fir_filter_ccf(1, variable_low_pass_filter_taps_0_2, 0, samp_rate)
+        self.blocks_wavfile_sink_0 = blocks.wavfile_sink(
+            "Figure/" + rec_stem + "_48k.wav",
+            1,
+            48000,
+            blocks.FORMAT_WAV,
+            blocks.FORMAT_FLOAT,
+            False
+            )
         self.blocks_throttle2_1 = blocks.throttle( gr.sizeof_gr_complex*1, samp_rate, True, 0 if "auto" == "auto" else max( int(float(0.1) * samp_rate) if "auto" == "time" else int(0.1), 1) )
         self.blocks_interleaved_short_to_complex_0 = blocks.interleaved_short_to_complex(False, False,1.0)
-        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_short*1, 'D:\\Research\\3_SCIONX GNURadio\\1_Share\\appendix_gnuradio\\Data\\20260720_220206_100000_98266_x.cs16', False, 0, 0)
+        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_short*1, cs16_path, False, 0, 0)
         self.blocks_file_source_0.set_begin_tag(pmt.PMT_NIL)
         self.analog_quadrature_demod_cf_0_1_0 = analog.quadrature_demod_cf((15.91*2))
 
@@ -239,13 +177,13 @@ class IQtoOgg_plot(gr.top_block, Qt.QWidget):
         # Connections
         ##################################################
         self.connect((self.analog_quadrature_demod_cf_0_1_0, 0), (self.qtgui_time_sink_x_0, 0))
+        self.connect((self.analog_quadrature_demod_cf_0_1_0, 0), (self.rational_resampler_xxx_0, 0))
         self.connect((self.blocks_file_source_0, 0), (self.blocks_interleaved_short_to_complex_0, 0))
         self.connect((self.blocks_interleaved_short_to_complex_0, 0), (self.blocks_throttle2_1, 0))
         self.connect((self.blocks_throttle2_1, 0), (self.freq_xlating_fir_filter_xxx_0_0_0, 0))
         self.connect((self.blocks_throttle2_1, 0), (self.plotcap_iq, 0))
-        self.connect((self.blocks_throttle2_1, 0), (self.qtgui_freq_sink_x_0, 0))
-        self.connect((self.blocks_throttle2_1, 0), (self.qtgui_waterfall_sink_x_0, 0))
         self.connect((self.freq_xlating_fir_filter_xxx_0_0_0, 0), (self.analog_quadrature_demod_cf_0_1_0, 0))
+        self.connect((self.rational_resampler_xxx_0, 0), (self.blocks_wavfile_sink_0, 0))
 
 
     def closeEvent(self, event):
@@ -263,9 +201,14 @@ class IQtoOgg_plot(gr.top_block, Qt.QWidget):
         self.samp_rate = samp_rate
         self.set_variable_low_pass_filter_taps_0_2(firdes.low_pass(1.0, self.samp_rate, 15000, 1000, window.WIN_HAMMING, 6.76))
         self.blocks_throttle2_1.set_sample_rate(self.samp_rate)
-        self.qtgui_freq_sink_x_0.set_frequency_range(0, self.samp_rate)
         self.qtgui_time_sink_x_0.set_samp_rate(self.samp_rate)
-        self.qtgui_waterfall_sink_x_0.set_frequency_range(0, self.samp_rate)
+
+    def get_cs16_path(self):
+        return self.cs16_path
+
+    def set_cs16_path(self, cs16_path):
+        self.cs16_path = cs16_path
+        self.blocks_file_source_0.open(self.cs16_path, False)
 
     def get_variable_low_pass_filter_taps_0_2(self):
         return self.variable_low_pass_filter_taps_0_2
@@ -273,6 +216,13 @@ class IQtoOgg_plot(gr.top_block, Qt.QWidget):
     def set_variable_low_pass_filter_taps_0_2(self, variable_low_pass_filter_taps_0_2):
         self.variable_low_pass_filter_taps_0_2 = variable_low_pass_filter_taps_0_2
         self.freq_xlating_fir_filter_xxx_0_0_0.set_taps(self.variable_low_pass_filter_taps_0_2)
+
+    def get_rec_stem(self):
+        return self.rec_stem
+
+    def set_rec_stem(self, rec_stem):
+        self.rec_stem = rec_stem
+        self.blocks_wavfile_sink_0.open("Figure/" + self.rec_stem + "_48k.wav")
 
     def get_n_capture(self):
         return self.n_capture

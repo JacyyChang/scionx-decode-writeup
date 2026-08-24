@@ -57,6 +57,38 @@ blocks:
     coordinate: [200, 12]
     rotation: 0
     state: enabled
+- name: cs16_path
+  id: variable
+  parameters:
+    comment: The recording being processed this run -- edit this one line to
+      switch inputs. rec_stem (below) and blocks_file_source_0.file both
+      derive from it, so nothing else needs touching per-run.
+    value: 'r"D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Data\20260720_220206_100000_98266_x.cs16"'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 180]
+    rotation: 0
+    state: enabled
+- name: rec_stem
+  id: variable
+  parameters:
+    comment: 'date_time prefix pulled from cs16_path''s filename (drops the
+      samp-rate/NORAD-ID/_x fields) -- e.g. 20260720_220206_100000_98266_x
+      -> 20260720_220206 -- so Plot Capture / Wav Sink output filenames stay
+      tied to the source recording instead of a fixed ''iq''/''demod'' prefix.
+      No os import: GRC''s own design-time variable evaluator does not see
+      Import-block names (only the generated file does), so this has to be
+      plain string ops, not os.path.'
+    value: '"_".join(cs16_path.replace("\\", "/").rsplit("/", 1)[-1].split("_")[:2])'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [200, 180]
+    rotation: 0
+    state: enabled
 - name: variable_low_pass_filter_taps_0_2
   id: variable_low_pass_filter_taps
   parameters:
@@ -91,6 +123,27 @@ blocks:
     coordinate: [1512, 388.0]
     rotation: 0
     state: enabled
+- name: blocks_wavfile_sink_0
+  id: blocks_wavfile_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    append: 'False'
+    bits_per_sample1: FORMAT_FLOAT
+    comment: FORMAT_FLOAT, not the PCM_16 default -- quadrature_demod_cf's
+      gain can push the output past +-1.0, and PCM_16 would silently clip
+      that instead of erroring.
+    file: '"Figure/" + rec_stem + "_48k.wav"'
+    format: FORMAT_WAV
+    nchan: '1'
+    samp_rate: '48000'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1968, 564.0]
+    rotation: 0
+    state: enabled
 - name: blocks_file_source_0
   id: blocks_file_source
   parameters:
@@ -98,7 +151,7 @@ blocks:
     alias: ''
     begin_tag: pmt.PMT_NIL
     comment: ''
-    file: D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Data\20260720_220206_100000_98266_x.cs16
+    file: cs16_path
     length: '0'
     maxoutbuf: '0'
     minoutbuf: '0'
@@ -182,7 +235,7 @@ blocks:
     nfft: '1024'
     nsamples: n_capture
     out_dir: Figure
-    prefix: demod
+    prefix: rec_stem
     samp_rate: samp_rate
     save_npy: 'False'
     skip: '0'
@@ -206,7 +259,7 @@ blocks:
     nfft: '1024'
     nsamples: n_capture
     out_dir: Figure
-    prefix: iq
+    prefix: rec_stem
     samp_rate: samp_rate
     save_npy: 'False'
     skip: '0'
@@ -459,6 +512,30 @@ blocks:
     coordinate: [1672, 148.0]
     rotation: 0
     state: disabled
+- name: rational_resampler_xxx_0
+  id: rational_resampler_xxx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: samp_rate (100000) * 12/25 = 48000 -- matches 04_Beacon's
+      FS=9600*5, SPS=5, PHASE=2 exactly so nothing downstream needs to
+      change. NOTE this ratio is tied to samp_rate=100000; if a future
+      capture's actual rate differs, recompute both this ratio and
+      blocks_wavfile_sink_0.samp_rate together.
+    decim: '25'
+    fbw: '0'
+    interp: '12'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    taps: '[]'
+    type: fff
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [1672, 552.0]
+    rotation: 0
+    state: enabled
 - name: snippet_plot
   id: snippet
   parameters:
@@ -519,6 +596,7 @@ blocks:
 connections:
 - [analog_quadrature_demod_cf_0_1_0, '0', plotcap_af, '0']
 - [analog_quadrature_demod_cf_0_1_0, '0', qtgui_time_sink_x_0, '0']
+- [analog_quadrature_demod_cf_0_1_0, '0', rational_resampler_xxx_0, '0']
 - [blocks_file_source_0, '0', blocks_interleaved_short_to_complex_0, '0']
 - [blocks_interleaved_short_to_complex_0, '0', blocks_throttle2_1, '0']
 - [blocks_throttle2_1, '0', freq_xlating_fir_filter_xxx_0_0_0, '0']
@@ -526,6 +604,7 @@ connections:
 - [blocks_throttle2_1, '0', qtgui_freq_sink_x_0, '0']
 - [blocks_throttle2_1, '0', qtgui_waterfall_sink_x_0, '0']
 - [freq_xlating_fir_filter_xxx_0_0_0, '0', analog_quadrature_demod_cf_0_1_0, '0']
+- [rational_resampler_xxx_0, '0', blocks_wavfile_sink_0, '0']
 
 metadata:
   file_format: 1
