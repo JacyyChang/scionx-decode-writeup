@@ -20,7 +20,7 @@ the point. Run it with a Python that has `gnuradio` + `gr-satellites`
 | `gr_plot_sink.py` | Renders matplotlib PNGs straight out of a flowgraph — replaces the "File Sink -> `.bin` -> separate plotting script" round trip. See below. |
 | `gr_plot_capture.py` | `plot_capture`, a hier block bundling Head+Vector Sink+`gr_plot_sink` behind one input port — drag one block instead of wiring two. |
 | `grc_blocks/plot_capture.block.yml` | GRC block definition for `plot_capture`, so it shows up in the GRC block tree like a built-in block. |
-| `IQtoOgg_plot.grc` | `IQtoOgg.grc` plus two `plot_capture` taps and a two-line Python Snippet that fires them on exit. Worked example. |
+| `IQtoOgg_plot.grc` | The cs16 -> resampled/demodulated-audio decode chain, with two `plot_capture` taps and a two-line Python Snippet that fires them on exit. Worked example. |
 
 ## Test 1: which bit order does AX.25 actually use on the wire?
 
@@ -95,8 +95,8 @@ self.plotcap_iq.plot()
 self.plotcap_af.plot()
 ```
 
-`IQtoOgg_plot.grc` is exactly this, layered on top of `IQtoOgg.grc`: a
-`plotcap_iq` (`type=complex`, `mode=rf`) tapped off the Throttle, and a
+`IQtoOgg_plot.grc` is exactly this, applied to the cs16 -> audio decode
+chain: a `plotcap_iq` (`type=complex`, `mode=rf`) tapped off the Throttle, and a
 `plotcap_af` (`type=float`, `mode=time,psd`) tapped off the Quadrature Demod.
 `plot()` renders using whatever the block's own properties say; pass overrides
 from the snippet for a one-off look without touching the dialog, e.g.
