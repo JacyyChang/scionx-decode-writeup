@@ -90,7 +90,7 @@ class IQtoOgg_plot(gr.top_block, Qt.QWidget):
         # Variables
         ##################################################
         self.samp_rate = samp_rate = 100000
-        self.cs16_path = cs16_path = r"D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Data\20260720_220206_100000_98266_x.cs16"
+        self.cs16_path = cs16_path = r"D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Data\20260810_220940_100000_69910_x.cs16"
         self.variable_low_pass_filter_taps_0_2 = variable_low_pass_filter_taps_0_2 = firdes.low_pass(1.0, samp_rate, 15000, 1000, window.WIN_HAMMING, 6.76)
         self.rec_stem = rec_stem = "_".join(cs16_path.replace("\\", "/").rsplit("/", 1)[-1].split("_")[:2])
         self.n_capture = n_capture = 60*100000

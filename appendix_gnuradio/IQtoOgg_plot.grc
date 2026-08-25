@@ -33,6 +33,20 @@ options:
     state: enabled
 
 blocks:
+- name: cs16_path
+  id: variable
+  parameters:
+    comment: The recording being processed this run -- edit this one line to switch
+      inputs. rec_stem (below) and blocks_file_source_0.file both derive from it,
+      so nothing else needs touching per-run.
+    value: r"D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Data\20260810_220940_100000_69910_x.cs16"
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [8, 180]
+    rotation: 0
+    state: enabled
 - name: n_capture
   id: variable
   parameters:
@@ -45,6 +59,23 @@ blocks:
     coordinate: [360, 24.0]
     rotation: 0
     state: enabled
+- name: rec_stem
+  id: variable
+  parameters:
+    comment: 'date_time prefix pulled from cs16_path''s filename (drops the samp-rate/NORAD-ID/_x
+      fields) -- e.g. 20260720_220206_100000_98266_x -> 20260720_220206 -- so Plot
+      Capture / Wav Sink output filenames stay tied to the source recording instead
+      of a fixed ''iq''/''demod'' prefix. No os import: GRC''s own design-time variable
+      evaluator does not see Import-block names (only the generated file does), so
+      this has to be plain string ops, not os.path.'
+    value: '"_".join(cs16_path.replace("\\", "/").rsplit("/", 1)[-1].split("_")[:2])'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [16, 304.0]
+    rotation: 0
+    state: enabled
 - name: samp_rate
   id: variable
   parameters:
@@ -54,39 +85,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [200, 12]
-    rotation: 0
-    state: enabled
-- name: cs16_path
-  id: variable
-  parameters:
-    comment: The recording being processed this run -- edit this one line to
-      switch inputs. rec_stem (below) and blocks_file_source_0.file both
-      derive from it, so nothing else needs touching per-run.
-    value: 'r"D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Data\20260720_220206_100000_98266_x.cs16"'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [8, 180]
-    rotation: 0
-    state: enabled
-- name: rec_stem
-  id: variable
-  parameters:
-    comment: 'date_time prefix pulled from cs16_path''s filename (drops the
-      samp-rate/NORAD-ID/_x fields) -- e.g. 20260720_220206_100000_98266_x
-      -> 20260720_220206 -- so Plot Capture / Wav Sink output filenames stay
-      tied to the source recording instead of a fixed ''iq''/''demod'' prefix.
-      No os import: GRC''s own design-time variable evaluator does not see
-      Import-block names (only the generated file does), so this has to be
-      plain string ops, not os.path.'
-    value: '"_".join(cs16_path.replace("\\", "/").rsplit("/", 1)[-1].split("_")[:2])'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [200, 180]
+    coordinate: [224, 16.0]
     rotation: 0
     state: enabled
 - name: variable_low_pass_filter_taps_0_2
@@ -104,7 +103,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1000, 520.0]
+    coordinate: [1016, 488.0]
     rotation: 0
     state: enabled
 - name: analog_quadrature_demod_cf_0_1_0
@@ -120,28 +119,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1512, 388.0]
-    rotation: 0
-    state: enabled
-- name: blocks_wavfile_sink_0
-  id: blocks_wavfile_sink
-  parameters:
-    affinity: ''
-    alias: ''
-    append: 'False'
-    bits_per_sample1: FORMAT_FLOAT
-    comment: FORMAT_FLOAT, not the PCM_16 default -- quadrature_demod_cf's
-      gain can push the output past +-1.0, and PCM_16 would silently clip
-      that instead of erroring.
-    file: '"Figure/" + rec_stem + "_48k.wav"'
-    format: FORMAT_WAV
-    nchan: '1'
-    samp_rate: '48000'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [1968, 564.0]
+    coordinate: [1440, 420.0]
     rotation: 0
     state: enabled
 - name: blocks_file_source_0
@@ -205,6 +183,29 @@ blocks:
     coordinate: [880, 144.0]
     rotation: 0
     state: enabled
+- name: blocks_wavfile_sink_0
+  id: blocks_wavfile_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    append: 'False'
+    bits_per_sample1: FORMAT_FLOAT
+    bits_per_sample2: FORMAT_PCM_16
+    bits_per_sample3: FORMAT_VORBIS
+    bits_per_sample4: FORMAT_PCM_16
+    comment: FORMAT_FLOAT, not the PCM_16 default -- quadrature_demod_cf's gain can
+      push the output past +-1.0, and PCM_16 would silently clip that instead of erroring.
+    file: '"Figure/" + rec_stem + "_48k.wav"'
+    format: FORMAT_WAV
+    nchan: '1'
+    samp_rate: '48000'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [2032, 516.0]
+    rotation: 0
+    state: enabled
 - name: freq_xlating_fir_filter_xxx_0_0_0
   id: freq_xlating_fir_filter_xxx
   parameters:
@@ -246,7 +247,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1656, 700.0]
+    coordinate: [1664, 836.0]
     rotation: 0
     state: disabled
 - name: plotcap_iq
@@ -517,11 +518,10 @@ blocks:
   parameters:
     affinity: ''
     alias: ''
-    comment: samp_rate (100000) * 12/25 = 48000 -- matches 04_Beacon's
-      FS=9600*5, SPS=5, PHASE=2 exactly so nothing downstream needs to
-      change. NOTE this ratio is tied to samp_rate=100000; if a future
-      capture's actual rate differs, recompute both this ratio and
-      blocks_wavfile_sink_0.samp_rate together.
+    comment: samp_rate (100000) * 12/25 = 48000 -- matches 04_Beacon's FS=9600*5,
+      SPS=5, PHASE=2 exactly so nothing downstream needs to change. NOTE this ratio
+      is tied to samp_rate=100000; if a future capture's actual rate differs, recompute
+      both this ratio and blocks_wavfile_sink_0.samp_rate together.
     decim: '25'
     fbw: '0'
     interp: '12'
@@ -533,7 +533,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [1672, 552.0]
+    coordinate: [1608, 560.0]
     rotation: 0
     state: enabled
 - name: snippet_plot

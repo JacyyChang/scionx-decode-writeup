@@ -62,3 +62,4 @@ Data/*.ogg
 #     README, so it's exploratory the same way 01a/01b's figures are. ---
 appendix_gnuradio/Data/*.cs16
 appendix_gnuradio/Figure/*
+appendix_gnuradio/Output/*

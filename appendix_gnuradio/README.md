@@ -2,12 +2,15 @@
 
 ## What this is about
 
-**This folder is for GNU Radio testing, not signal diagnostics.** `01`/`02`/`03`
-analyse the recording; `04` decodes telemetry fields out of it. This folder does
-something different: it takes an assumption the rest of the repo depends on,
-builds a signal whose correct answer is already known, and runs it through a
-**real, independent GNU Radio implementation** to see whether the assumption
-holds.
+**This folder started as GNU Radio testing, not signal diagnostics** — `01`/`02`/`03`
+analyse the recording; `04` decodes telemetry fields out of it. Originally this
+folder did something different: it took an assumption the rest of the repo
+depends on, built a signal whose correct answer is already known, and ran it
+through a **real, independent GNU Radio implementation** to see whether the
+assumption holds (the `hdlc_bitorder_test.grc` test below). It has since grown
+a second use: decoding *new*, not-yet-processed `.cs16` IQ captures end to end
+(`IQtoOgg_plot.grc` onward) — see "New recordings: signal-strength survey"
+further down.
 
 ⚠️ Unlike everything else in this repo, **GNU Radio is required here** — that's
 the point. Run it with a Python that has `gnuradio` + `gr-satellites`
@@ -21,6 +24,9 @@ the point. Run it with a Python that has `gnuradio` + `gr-satellites`
 | `gr_plot_capture.py` | `plot_capture`, a hier block bundling Head+Vector Sink+`gr_plot_sink` behind one input port — drag one block instead of wiring two. |
 | `grc_blocks/plot_capture.block.yml` | GRC block definition for `plot_capture`, so it shows up in the GRC block tree like a built-in block. |
 | `IQtoOgg_plot.grc` | The cs16 -> resampled/demodulated-audio decode chain, with two `plot_capture` taps and a two-line Python Snippet that fires them on exit. Worked example. |
+| `view_segment.m` | MATLAB: waveform + block-wise RMS power (dB) for one or more `plot_capture` segments, linked-axis zoom. Real frames show up as a power *dip*, not a rise. Candidate/confirmed segment list built into the script -- edit and re-run. |
+| `run_02_03_on_segment.py` | Reuses `02_zero_run_baseline.py`/`03a`/`03b`'s per-frame plotting functions against a forced frame start, for a recording whose z-score never clears those scripts' hardcoded detection threshold. See "New recordings" below. |
+| `Wav_TimingSync.grc` | Alternate decode path: GNU Radio's own `Symbol Sync` (Mueller & Muller TED) + `HDLC Deframer` (FCS-checked), instead of this repo's fixed-SPS/PHASE `scionx` pipeline. Not yet wired to an input file. |
 
 ## Test 1: which bit order does AX.25 actually use on the wire?
 
@@ -265,6 +271,63 @@ close the window sooner rather than relying on `nsamples` to cap RAM. For this
 project's actual use (finite recordings, watched for seconds to a couple of
 minutes) that trade is the right one: unbounded-but-controllable memory growth
 beats a hard freeze of every other display in the flowgraph.
+
+## New recordings: signal-strength survey (2026-08-24/25)
+
+The `.cs16` files under `Data/` are 100 kHz-sample-rate SDR captures of
+SCION-X passes, provided by a colleague in the Czech Republic — longer
+(600-800 s) than the shared `cut_first3.ogg`, and going through a raw
+GNU Radio chain (`IQtoOgg_plot.grc`) with **no Doppler/AFC correction**,
+unlike whatever SatNOGS-style ground-station chain produced `cut_first3.ogg`.
+
+**Workflow**: `IQtoOgg_plot.grc`'s periodic `plot_capture` (30 s/segment)
+scans a whole recording into `Figure/<stem>_seg###_spec_*.png` spectrograms;
+candidates are picked by eye, then confirmed with `view_segment.m` (MATLAB —
+waveform + block-wise RMS power in dB, same method as
+`01a_waveform_power_overview.py`). A real GFSK frame shows up as a power
+**dip**, not a rise (FM quieting suppresses receiver noise under a real
+carrier) — look for the RMS panel dropping several dB below its own noise
+floor, not for a peak.
+
+**Segments found so far** (30 s each; dip depth = the segment's noise-floor
+median minus its minimum, both in dB RMS):
+
+| Recording | Segment | Time range | Dip depth | Status |
+|---|---|---|---|---|
+| `20260720_220206_..._98266_x.cs16` | seg007 | 210-240s | ~12.2 dB | **Confirmed** — see below |
+| `20260723_091639_..._98266_x.cs16` | seg002 | 60-90s   | ~13.1 dB | Candidate |
+| `20260723_091639_..._98266_x.cs16` | seg010 | 300-330s | ~16.1 dB | Candidate |
+| `20260723_091639_..._98266_x.cs16` | seg017 | 510-540s | ~13.7 dB | Candidate |
+| `20260810_220940_..._69910_x.cs16` | seg004 | 120-150s | ~12.3 dB | Candidate |
+| `20260810_220940_..._69910_x.cs16` | seg018 | 540-570s | ~9.4 dB  | Candidate |
+
+All six dips are comparable to or deeper than `cut_first3.ogg`'s known-good
+frames (~6-7 dB) — **consistent with real signal, not noise, across all three
+recordings.** Each segment is also exported standalone to
+`Figure/<stem>_seg###_<start>-<end>s.wav` for feeding straight into a decoder.
+
+**seg007 is confirmed, but not fully decoded yet.**
+`04_Beacon/04a_zscore_visualization.py`'s fixed-template correlator (tuned on
+`cut_first3.ogg`) finds nothing on any of these recordings, even down to
+z=5.5 — most likely because this raw SDR chain has no Doppler/clock
+correction. Forcing `04d_destuff_interactive_ver2.py --z-threshold 5.5` on
+seg007 anyway found a frame with only 30/1320 mismatches at verifiable
+(header/padding) bit positions — far better than chance, so almost certainly
+a real frame, but **the CRC/FCS check has not been confirmed passing yet.**
+`run_02_03_on_segment.py`, reusing `02`/`03a`/`03b`'s plotting functions
+against that same forced frame start, produces consistent-looking results
+(zero-run regions decide ~0% as 1-bits; header bit=1/bit=0 amplitude
+separation looks clean) — more evidence of a real, roughly-aligned frame, not
+yet a full decode.
+
+**Next step**: `Wav_TimingSync.grc` — a proper-timing-recovery decode path
+(GNU Radio's `Symbol Sync` block: Mueller & Muller TED, MMSE 8-tap resampler)
+feeding `satellites_hdlc_deframer` (FCS-checked) directly, instead of this
+repo's fixed-SPS/PHASE `scionx` pipeline reading the timing straight off the
+sample clock. Should be more robust to exactly the kind of residual
+frequency/clock offset suspected above. Not yet wired to an input file
+(`blocks_wavfile_source_0.file` is still empty) — point it at one of the
+`Figure/*_seg###_*.wav` exports above to try it.
 
 ## How to run
 
