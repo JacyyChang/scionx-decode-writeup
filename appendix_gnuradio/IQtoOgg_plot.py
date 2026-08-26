@@ -159,7 +159,7 @@ class IQtoOgg_plot(gr.top_block, Qt.QWidget):
             save_npy=False)
         self.freq_xlating_fir_filter_xxx_0_0_0 = filter.freq_xlating_fir_filter_ccf(1, variable_low_pass_filter_taps_0_2, 0, samp_rate)
         self.blocks_wavfile_sink_0 = blocks.wavfile_sink(
-            "Figure/" + rec_stem + "_48k.wav",
+            "Output/" + rec_stem + "_48k.wav",
             1,
             48000,
             blocks.FORMAT_WAV,
@@ -222,7 +222,7 @@ class IQtoOgg_plot(gr.top_block, Qt.QWidget):
 
     def set_rec_stem(self, rec_stem):
         self.rec_stem = rec_stem
-        self.blocks_wavfile_sink_0.open("Figure/" + self.rec_stem + "_48k.wav")
+        self.blocks_wavfile_sink_0.open("Output/" + self.rec_stem + "_48k.wav")
 
     def get_n_capture(self):
         return self.n_capture

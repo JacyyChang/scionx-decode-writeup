@@ -26,7 +26,11 @@ the point. Run it with a Python that has `gnuradio` + `gr-satellites`
 | `IQtoOgg_plot.grc` | The cs16 -> resampled/demodulated-audio decode chain, with two `plot_capture` taps and a two-line Python Snippet that fires them on exit. Worked example. |
 | `view_segment.m` | MATLAB: waveform + block-wise RMS power (dB) for one or more `plot_capture` segments, linked-axis zoom. Real frames show up as a power *dip*, not a rise. Candidate/confirmed segment list built into the script -- edit and re-run. |
 | `run_02_03_on_segment.py` | Reuses `02_zero_run_baseline.py`/`03a`/`03b`'s per-frame plotting functions against a forced frame start, for a recording whose z-score never clears those scripts' hardcoded detection threshold. See "New recordings" below. |
-| `Wav_TimingSync.grc` | Alternate decode path: GNU Radio's own `Symbol Sync` (Mueller & Muller TED) + `HDLC Deframer` (FCS-checked), instead of this repo's fixed-SPS/PHASE `scionx` pipeline. Not yet wired to an input file. |
+| `Wav_TimingSync.grc` | Alternate decode path: GNU Radio's own `Symbol Sync` (Mueller & Muller TED) + `HDLC Deframer` (FCS-checked), instead of this repo's fixed-SPS/PHASE `scionx` pipeline. **Confirmed decode of seg017 as of 2026-08-25** — see below. |
+| `symbol_sync_sweep.py` | Reusable CLI tool: grid-searches `symbol_sync_ff`'s timing-recovery parameters against any wav file, offline-scored (graded, not pass/fail) — the tool that decoded seg017 below. `python symbol_sync_sweep.py Output/some_segment.wav`, then `--verify` to confirm the winner against the real `hdlc_deframer`. |
+| `plot_pickpoints_comparison.py` | Plots where a candidate frame's symbol decisions land on the waveform, vs `01`/`03`'s fixed `SPS`-grid. `--whole` for the whole frame. ⚠️ its drift curve is misleading — see the docstring and the retraction below. |
+| `plot_pickpoints_seg017.m` | MATLAB, zoomable: same pick-point figure for the one confirmed decode. Constants pasted at the top, so it's just `audioread` + `plot`. |
+| `tune_decision_points.m` | MATLAB: eye diagram + decision-margin-vs-sampling-phase for the confirmed frame, with `SPS_USE` / `PHASE_ADJ` knobs. This is the tool that established `sps` really is 5.000. |
 
 ## Test 1: which bit order does AX.25 actually use on the wire?
 
@@ -297,14 +301,14 @@ median minus its minimum, both in dB RMS):
 | `20260720_220206_..._98266_x.cs16` | seg007 | 210-240s | ~12.2 dB | **Confirmed** — see below |
 | `20260723_091639_..._98266_x.cs16` | seg002 | 60-90s   | ~13.1 dB | Candidate |
 | `20260723_091639_..._98266_x.cs16` | seg010 | 300-330s | ~16.1 dB | Candidate |
-| `20260723_091639_..._98266_x.cs16` | seg017 | 510-540s | ~13.7 dB | Candidate |
+| `20260723_091639_..._98266_x.cs16` | seg017 | 510-540s | ~13.7 dB | **Confirmed** — see below |
 | `20260810_220940_..._69910_x.cs16` | seg004 | 120-150s | ~12.3 dB | Candidate |
 | `20260810_220940_..._69910_x.cs16` | seg018 | 540-570s | ~9.4 dB  | Candidate |
 
 All six dips are comparable to or deeper than `cut_first3.ogg`'s known-good
 frames (~6-7 dB) — **consistent with real signal, not noise, across all three
 recordings.** Each segment is also exported standalone to
-`Figure/<stem>_seg###_<start>-<end>s.wav` for feeding straight into a decoder.
+`Output/<stem>_seg###_<start>-<end>s.wav` for feeding straight into a decoder.
 
 **seg007 is confirmed, but not fully decoded yet.**
 `04_Beacon/04a_zscore_visualization.py`'s fixed-template correlator (tuned on
@@ -320,14 +324,187 @@ against that same forced frame start, produces consistent-looking results
 separation looks clean) — more evidence of a real, roughly-aligned frame, not
 yet a full decode.
 
-**Next step**: `Wav_TimingSync.grc` — a proper-timing-recovery decode path
-(GNU Radio's `Symbol Sync` block: Mueller & Muller TED, MMSE 8-tap resampler)
-feeding `satellites_hdlc_deframer` (FCS-checked) directly, instead of this
-repo's fixed-SPS/PHASE `scionx` pipeline reading the timing straight off the
-sample clock. Should be more robust to exactly the kind of residual
-frequency/clock offset suspected above. Not yet wired to an input file
-(`blocks_wavfile_source_0.file` is still empty) — point it at one of the
-`Figure/*_seg###_*.wav` exports above to try it.
+**Update (2026-08-25)**: seg017 below is now a confirmed decode via the
+`Wav_TimingSync.grc` path; seg007's frame (paragraph above) hasn't been
+retried through it yet — see "Not yet done" at the end of the next section.
+
+## seg017 decoded via `Wav_TimingSync.grc`'s Symbol Sync path (2026-08-25)
+
+`Wav_TimingSync.grc` is a proper-timing-recovery decode path — GNU Radio's
+`Symbol Sync` block (Mueller & Muller TED, MMSE 8-tap resampler) feeding
+`satellites_hdlc_deframer` (FCS-checked) directly, instead of this repo's
+fixed-SPS/PHASE `scionx` pipeline reading the timing straight off the sample
+clock — aimed at exactly the kind of residual frequency/clock offset
+suspected above (`IQtoOgg_plot.grc` has no Doppler/AFC correction).
+
+**`20260723_091639_..._98266_x.cs16` seg017 (510-540s), previously CANDIDATE
+ONLY, is now a confirmed decode**: a full AX.25 frame, FCS-checked, its
+16-byte header byte-for-byte identical to `REFERENCE_FRAME.md`'s constant
+address+control+PID (`84 9c 60 86 aa 40 60 84 9c 60 a6 86 b0 e1 03 f0`) — same
+satellite, different pass, so the telemetry payload itself differs from
+`REFERENCE_FRAME.md`, as expected.
+
+### What was changed: `digital_symbol_sync_xx_0.damping` 1.0 → 0.7
+
+Everything else in `Wav_TimingSync.grc` is unchanged from its original
+values: TED = Mueller & Muller, `loop_bw=0.045`, `max_dev=1.5`, `sps=5`
+(= 48000/9600, matching `IQtoOgg_plot.grc`'s resampler output).
+
+⚠️ **`damping=0.7` is NOT "the correct value"** — that framing (which an
+earlier version of this section used) was wrong, and a follow-up sweep
+disproved it. See "How wide is the working window" below: `damping` 0.4,
+0.5, 0.85 and 1.0 all decode this same frame at other `loop_bw` values. The
+original settings simply happened to land on a failing point and
+`damping=0.7` on a passing one. Do not carry 0.7 to another recording
+expecting it to be meaningful.
+
+### How this was found: an offline-scored parameter sweep, not trial and error
+
+The sweep itself is now `symbol_sync_sweep.py` in this folder — reusable
+against any other wav file, not a one-off:
+
+```bash
+python symbol_sync_sweep.py Output/some_other_segment.wav
+python symbol_sync_sweep.py Output/some_other_segment.wav --verify   # after a hit
+```
+
+Running the real `satellites_hdlc_deframer` block once per candidate
+parameter set only gives a binary pass/fail — on a weak, likely-borderline
+signal that gives no sense of "getting warmer" across ~100 combinations to
+search. Instead, two stages:
+
+1. **Stage 1 (search)**: a headless (no GUI, no custom Python streaming
+   block — see the segfault warning above) `gr.top_block` per combo, built
+   from only compiled blocks: `wavfile_source -> symbol_sync_ff ->
+   binary_slicer_fb -> vector_sink_b`. The output bits are then scored
+   **offline in pure Python** — bit-exactly replaying
+   `satellites.hdlc_deframer.work()`'s flag/destuff state machine and LSB-first
+   byte packing (per the "Test 1" bit-order result above), then checking
+   CRC-16/X.25 on every candidate frame, trying both bit polarities per
+   combo. This gives a graded score per combination (flag count / near-length
+   candidates / actual CRC passes) instead of a single yes/no per run.
+   Grid: `ted_type` in {M&M, Gardner, `TED_MENGALI_AND_DANDREA_GMSK`,
+   `TED_DANDREA_AND_MENGALI_GEN_MSK`} (the latter two are GMSK/GFSK-specific
+   TEDs available in this GNU Radio build, more appropriate to this
+   modulation than M&M in principle — turned out not to win here) ×
+   `loop_bw` in {0.01, 0.045, 0.08, 0.15} × `damping` in {0.7, 1.3} ×
+   `max_dev` in {1.0, 1.5, 2.5} — 96 combos, ~0.3-1s each.
+2. **Stage 2 (confirm)**: re-run the winning combo through the *real*
+   `satellites.hdlc_deframer` + `blocks.message_debug` — not the offline
+   reimplementation — for GNU Radio's own FCS check as independent
+   confirmation. Both agree: one message, 272-byte payload, header matches,
+   CRC passes.
+
+Only **one** combo out of 96 produced any CRC pass:
+`M&M, loop_bw=0.045, damping=0.7, max_dev=1.5`. Several neighboring combos
+landed a near-274-byte candidate frame without passing CRC. That looked at
+the time like a narrow-but-real working point; the finer sweep below shows
+the picture is different.
+
+### How wide is the working window (2026-08-26)
+
+A finer sweep centred on that combo — `MM`, `loop_bw` in 11 steps from 0.02
+to 0.08, `damping` in {0.4, 0.5, 0.6, 0.7, 0.85, 1.0}, `max_dev` in {1.2,
+1.5, 1.8}, 198 combos, no timeouts — found **12 CRC passes (6 %)**, every
+one of them a 274-byte frame:
+
+| `max_dev` | passing (`loop_bw`, `damping`) pairs |
+|---|---|
+| 1.2 | (0.03, 0.4) (0.04, 0.7) (0.05, 1.0) (0.055, 0.7) |
+| 1.5 | (0.025, 0.4) (0.045, 0.7) (0.045, 0.85) (0.05, 1.0) (0.06, 1.0) |
+| 1.8 | (0.03, 0.5) (0.04, 0.4) (0.04, 0.5) |
+
+**The passes are scattered, not a contiguous region.** A genuine parameter
+optimum would show a connected blob; instead neighbouring cells flip between
+pass and fail with no visible structure. Read that as: the loop is working
+right at its threshold on this signal — the frame *is* decodable, but only
+just, and whether a given parameter set carries the timing cleanly through
+all 2201 symbols is close to a coin flip.
+
+Consequences worth keeping in mind:
+
+- **The decode is real.** Twelve independent parameter sets each produce a
+  CRC-passing 274-byte frame whose 16-byte header matches
+  `REFERENCE_FRAME.md` exactly. That is not chance.
+- **No individual parameter value is "the answer."** Don't carry
+  `damping=0.7` (or any of these) to a new recording as if it were tuned.
+  Sweep instead.
+- **On a new file, expect to need a grid, and expect a low hit rate even
+  when the signal is decodable.** A handful of hits scattered through a
+  sweep is what success looks like here; one hit is not obviously luckier
+  than twelve.
+
+**`ted_gain` is not a useful independent axis** (checked 2026-08-26, on a
+hypothesis that turned out to be wrong). Because a slicer makes ±1 decisions
+while this signal's in-frame RMS is ≈4.55, the M&M error scales with
+amplitude, which suggested `ted_gain` ≈ 0.22 should work better than 1.0.
+It does not: sweeping `ted_gain` over 0.05…4.5 at the anchor, **only 1.0
+passed**. Holding `loop_bw`/`ted_gain` fixed at 0.045 while moving both also
+fails in 4 of 6 cases, because GNU Radio's loop coefficients go as
+α ∝ `loop_bw`/`ted_gain` but β ∝ `loop_bw²`/`ted_gain` — the two cannot be
+traded off by a single ratio. `symbol_sync_sweep.py --ted-gain` accepts a
+list if you want to re-check, but leave it at 1.0 and sweep `loop_bw`.
+
+**Gotcha hit during the sweep**: `TED_GARDNER` hung several parameter
+combinations indefinitely on this signal (12 of the 96 combos never
+returned; confirmed unkillable from inside its own process/thread). The
+sweep driver therefore runs each combo as a subprocess with a hard timeout,
+recording and skipping any combo that doesn't finish in 15s. This is
+unrelated to the epy_block segfault warning above — `satellites.hdlc_deframer`
+itself (a Python `gr.sync_block` with a stream port) runs fine in this
+environment, as already shown by the bit-order test above; the Gardner hang
+is TED-specific and apparently signal-dependent.
+
+### The symbol rate really is 5.000 samples/symbol — and a retracted claim
+
+`plot_pickpoints_comparison.py` reports an `avg_sps` computed as
+(input samples) / (output symbols) over the whole file. For this run that
+comes out at **4.9234**, and an earlier version of this section read that as
+a real ~1.5 % clock offset, complete with a "168 samples of cumulative drift
+across the frame" figure. **That was wrong, and is retracted.** `avg_sps` is
+a whole-file average, but ~29 of these 30 seconds are noise, where the loop
+free-runs — so the number describes the loop's behaviour in noise, not the
+frame's symbol rate.
+
+Measured directly instead, by folding the confirmed frame into an eye
+diagram at several candidate rates and comparing how far the samples sit
+from the slicer threshold at the best vs. worst sampling phase:
+
+| `sps` | best margin | eye openness (best/worst) |
+|---|---|---|
+| **5.00000** | 4.5887 | **1.094** |
+| 4.98 | 4.4589 | 1.022 |
+| 4.96 | 4.4306 | 1.010 |
+| 4.92336 (the whole-file average) | 4.4194 | 1.008 |
+| 4.90 | 4.4027 | 1.003 |
+
+Only 5.000 produces an eye at all; everything else is flat, i.e. the
+sampling instants smear across the symbol period. **`sps = 5.0` stands**
+(= 48000/9600), and the fixed-rate grid `01`/`03` use does *not* drift
+relative to the true symbol instants within a frame. Whatever stops `01`/`03`
+from decoding these recordings, it is not clock drift.
+
+The eye is nonetheless only modestly open (1.094), and the best sampling
+phase sits 2.0 samples away from where the tooling currently anchors the
+frame — worth ~6 % more decision margin. That offset is most likely an
+artefact of the anchor itself, which is derived from the discredited
+`avg_sps`; pinning the true frame start needs a cross-correlation of the now
+known-exactly 2202 on-wire bits against the waveform.
+
+Two MATLAB helpers exist for looking at this by hand, both self-contained
+(constants pasted in at the top, `audioread` + `plot`, no Symbol Sync run):
+`plot_pickpoints_seg017.m` (zoomable version of the pick-point figure) and
+`tune_decision_points.m` (eye diagram + decision-margin-vs-phase curve, with
+`SPS_USE` / `PHASE_ADJ` knobs).
+
+**Not yet done** (all straightforward with `symbol_sync_sweep.py` above,
+just not run yet): seg007's confirmed-but-undecoded frame (previous section)
+hasn't been retried through this Symbol Sync path; and the other
+CANDIDATE-only segments have been swept on the *coarse* 144-combo grid with
+zero passes (seg002/seg010, plus seg007 at 210-240s) but not on the finer
+grid that found 12 passes for seg017 — worth redoing before concluding they
+are undecodable. seg004/seg018 haven't been tried at all. Each just needs
+`python symbol_sync_sweep.py Output/<that segment>.wav`.
 
 ## How to run
 

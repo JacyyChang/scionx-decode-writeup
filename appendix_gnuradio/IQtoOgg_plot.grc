@@ -195,7 +195,7 @@ blocks:
     bits_per_sample4: FORMAT_PCM_16
     comment: FORMAT_FLOAT, not the PCM_16 default -- quadrature_demod_cf's gain can
       push the output past +-1.0, and PCM_16 would silently clip that instead of erroring.
-    file: '"Figure/" + rec_stem + "_48k.wav"'
+    file: '"Output/" + rec_stem + "_48k.wav"'
     format: FORMAT_WAV
     nchan: '1'
     samp_rate: '48000'

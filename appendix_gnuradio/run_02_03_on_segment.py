@@ -2,7 +2,7 @@
 """
 run_02_03_on_segment.py -- apply 02_zero_run_baseline / 03a_data_asymmetry_check /
 03b_data_fixed_offset_threshold's per-frame analysis to the GNU-Radio-captured
-candidate frame in Figure/20260720_220206_seg007_235-245s.wav, instead of their
+candidate frame in Output/20260720_220206_seg007_235-245s.wav, instead of their
 hardcoded cut_first3.ogg pipeline.
 
 Why a separate driver instead of editing those three scripts: they have no CLI
@@ -35,7 +35,7 @@ sys.path.insert(0, REPO_ROOT)
 from scionx import audio_io, baseline   # noqa: E402
 from _style import setup_mpl            # noqa: E402
 
-AUDIO = os.path.join(HERE, "Figure", "20260720_220206_seg007_235-245s.wav")
+AUDIO = os.path.join(HERE, "Output", "20260720_220206_seg007_235-245s.wav")
 FRAME_START = 182707   # sample index within AUDIO; found via 04d_destuff_interactive_ver2.py --z-threshold 5.5
 Z_SCORE = 5.74          # this recording's actual detection z-score -- forced, below these scripts' own 12.0 threshold
 OUT_DIR = os.path.join(HERE, "Output")

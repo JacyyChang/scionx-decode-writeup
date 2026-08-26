@@ -75,7 +75,7 @@ class Wav_TimingSync(gr.top_block, Qt.QWidget):
             digital.TED_MUELLER_AND_MULLER,
             5,
             0.045,
-            1.0,
+            0.7,
             1.0,
             1.5,
             1,
@@ -84,14 +84,14 @@ class Wav_TimingSync(gr.top_block, Qt.QWidget):
             128,
             [])
         self.digital_binary_slicer_fb_0 = digital.binary_slicer_fb()
-        self.blocks_wavfile_source_0 = blocks.wavfile_source('', True)
+        self.blocks_wavfile_source_0 = blocks.wavfile_source('D:\\Research\\3_SCIONX GNURadio\\1_Share\\appendix_gnuradio\\Output\\20260723_091639_seg017_510-540s.wav', False)
         self.blocks_message_debug_0 = blocks.message_debug(True, gr.log_levels.info)
 
 
         ##################################################
         # Connections
         ##################################################
-        self.msg_connect((self.satellites_hdlc_deframer_0_0, 'out'), (self.blocks_message_debug_0, 'log'))
+        self.msg_connect((self.satellites_hdlc_deframer_0_0, 'out'), (self.blocks_message_debug_0, 'print_pdu'))
         self.connect((self.blocks_wavfile_source_0, 0), (self.digital_symbol_sync_xx_0, 0))
         self.connect((self.digital_binary_slicer_fb_0, 0), (self.satellites_hdlc_deframer_0_0, 0))
         self.connect((self.digital_symbol_sync_xx_0, 0), (self.digital_binary_slicer_fb_0, 0))

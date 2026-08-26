@@ -42,7 +42,7 @@ blocks:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [200, 12]
+    coordinate: [256, 24.0]
     rotation: 0
     state: enabled
 - name: blocks_message_debug_0
@@ -66,16 +66,16 @@ blocks:
     affinity: ''
     alias: ''
     comment: ''
-    file: ''
+    file: D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Output\20260723_091639_seg017_510-540s.wav
     maxoutbuf: '0'
     minoutbuf: '0'
     nchan: '1'
-    repeat: 'True'
+    repeat: 'False'
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [264, 232.0]
+    coordinate: [160, 232.0]
     rotation: 0
     state: enabled
 - name: digital_binary_slicer_fb_0
@@ -100,7 +100,7 @@ blocks:
     alias: ''
     comment: ''
     constellation: digital.constellation_bpsk().base()
-    damping: '1.0'
+    damping: '0.7'
     loop_bw: '0.045'
     max_dev: '1.5'
     maxoutbuf: '0'
@@ -142,7 +142,7 @@ connections:
 - [blocks_wavfile_source_0, '0', digital_symbol_sync_xx_0, '0']
 - [digital_binary_slicer_fb_0, '0', satellites_hdlc_deframer_0_0, '0']
 - [digital_symbol_sync_xx_0, '0', digital_binary_slicer_fb_0, '0']
-- [satellites_hdlc_deframer_0_0, out, blocks_message_debug_0, log]
+- [satellites_hdlc_deframer_0_0, out, blocks_message_debug_0, print_pdu]
 
 metadata:
   file_format: 1
