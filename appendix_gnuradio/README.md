@@ -31,6 +31,7 @@ the point. Run it with a Python that has `gnuradio` + `gr-satellites`
 | `plot_pickpoints_comparison.py` | Plots where a candidate frame's symbol decisions land on the waveform, vs `01`/`03`'s fixed `SPS`-grid. `--whole` for the whole frame. ⚠️ its drift curve is misleading — see the docstring and the retraction below. |
 | `plot_pickpoints_seg017.m` | MATLAB, zoomable: same pick-point figure for the one confirmed decode. Constants pasted at the top, so it's just `audioread` + `plot`. |
 | `tune_decision_points.m` | MATLAB: eye diagram + decision-margin-vs-sampling-phase for the confirmed frame, with `SPS_USE` / `PHASE_ADJ` knobs. This is the tool that established `sps` really is 5.000. |
+| `MATLAB_ANALYSIS.zh-TW.md` | Walkthrough of the two MATLAB scripts above — what each block of code computes, the formulas behind it, and a glossary of the timing-recovery terminology. Chinese, like `PLOT_CAPTURE.zh-TW.md`. |
 
 ## Test 1: which bit order does AX.25 actually use on the wire?
 
