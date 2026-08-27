@@ -1,3 +1,17 @@
+% ============================================================================
+% SUPERSEDED 2026-08-27 by eye_fixed_grid.m -- its "Symbol Sync avg grid" and
+% cumulative-drift figure are built on avg_sps = (whole-file input samples) /
+% (output symbols), which was misread as a ~1.5% real clock offset within the
+% frame. That reading is RETRACTED: ~29 of the file's 30s are noise, where
+% the loop free-runs, so avg_sps describes the loop's behaviour in noise, not
+% the frame's symbol rate. Directly measured (eye_fixed_grid.m), sps=5.0 is
+% exact and there is no drift within the frame at all. Also: a fixed grid
+% alone (no Symbol Sync) turned out to decode seg017 across 67% of the
+% symbol period -- see README.md, "Fixed grid alone decodes seg017 and
+% seg002". Kept only for its zoomable two-grid comparison view; don't cite
+% its drift numbers.
+% ============================================================================
+%
 % plot_pickpoints_seg017.m -- zoomable MATLAB version of the ONE confirmed
 % decode's pick-point figure: 20260723_091639 seg017 (510-540s), decoded with
 % Symbol Sync MM / loop_bw=0.045 / damping=0.7 / max_dev=1.5.

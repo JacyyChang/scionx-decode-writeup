@@ -34,9 +34,12 @@ README.md, "The symbol rate really is 5.000 samples/symbol".
 
 So: this script is still useful for seeing WHERE the decisions land, but do
 not read the divergence between the two grids as evidence of real clock
-drift within a frame. For judging sampling phase quality, prefer
-tune_decision_points.m (eye diagram + margin-vs-phase), which measures the
-signal directly instead of inferring from a loop statistic.
+drift within a frame. For judging sampling phase quality, use
+eye_fixed_grid.m instead (eye diagram + the corrected eye-opening metric:
+weakest '1' minus strongest '0'), which measures the signal directly instead
+of inferring from a loop statistic -- and, per README.md's "Fixed grid alone
+decodes seg017 and seg002", is often enough on its own without running
+Symbol Sync or this script at all.
 
 Usage (run with the radioconda Python -- see this folder's README):
     python plot_pickpoints_comparison.py Output/some_segment.wav \\

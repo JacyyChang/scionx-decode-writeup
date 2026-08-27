@@ -1,3 +1,15 @@
+% ============================================================================
+% SUPERSEDED 2026-08-27 by eye_fixed_grid.m -- DO NOT TRUST THE MARGIN NUMBERS.
+% This script's mean(|y-threshold|) margin averages over ALL ~2200 symbols,
+% ~1880 of which are constant zero-run padding sitting far from the
+% threshold regardless of phase -- so the average barely moves and reports
+% "eye barely open" (ratio ~1.09) for what eye_fixed_grid.m's correct metric
+% (weakest '1' minus strongest '0') shows is a wide-open eye (+5.04). See
+% appendix_gnuradio/README.md, "The symbol rate really is 5.000
+% samples/symbol" and MATLAB_ANALYSIS.zh-TW.md's "被推翻的舊指標" section.
+% Kept only for its phase-sweep UI shape; use eye_fixed_grid.m instead.
+% ============================================================================
+%
 % tune_decision_points.m -- interactive tool for judging (and improving) WHERE
 % the symbol decisions land inside seg017's confirmed frame.
 %

@@ -29,9 +29,12 @@ the point. Run it with a Python that has `gnuradio` + `gr-satellites`
 | `Wav_TimingSync.grc` | Alternate decode path: GNU Radio's own `Symbol Sync` (Mueller & Muller TED) + `HDLC Deframer` (FCS-checked), instead of this repo's fixed-SPS/PHASE `scionx` pipeline. **Confirmed decode of seg017 as of 2026-08-25** — see below. |
 | `symbol_sync_sweep.py` | Reusable CLI tool: grid-searches `symbol_sync_ff`'s timing-recovery parameters against any wav file, offline-scored (graded, not pass/fail) — the tool that decoded seg017 below. `python symbol_sync_sweep.py Output/some_segment.wav`, then `--verify` to confirm the winner against the real `hdlc_deframer`. |
 | `plot_pickpoints_comparison.py` | Plots where a candidate frame's symbol decisions land on the waveform, vs `01`/`03`'s fixed `SPS`-grid. `--whole` for the whole frame. ⚠️ its drift curve is misleading — see the docstring and the retraction below. |
-| `plot_pickpoints_seg017.m` | MATLAB, zoomable: same pick-point figure for the one confirmed decode. Constants pasted at the top, so it's just `audioread` + `plot`. |
-| `tune_decision_points.m` | MATLAB: eye diagram + decision-margin-vs-sampling-phase for the confirmed frame, with `SPS_USE` / `PHASE_ADJ` knobs. This is the tool that established `sps` really is 5.000. |
-| `MATLAB_ANALYSIS.zh-TW.md` | Walkthrough of the two MATLAB scripts above — what each block of code computes, the formulas behind it, and a glossary of the timing-recovery terminology. Chinese, like `PLOT_CAPTURE.zh-TW.md`. |
+| `plot_pickpoints_seg017.m` | ⚠️ **SUPERSEDED by `eye_fixed_grid.m`** — kept for its zoomable pick-point comparison view, but its "Symbol Sync avg grid" and drift figure rest on the retracted `avg_sps`-as-clock-offset reading (see below). Don't cite its numbers. |
+| `tune_decision_points.m` | ⚠️ **SUPERSEDED by `eye_fixed_grid.m`** — its "margin" metric averages `\|y-threshold\|` over every symbol including ~1880 zero-padding ones, which drowns out the real signal and reported "barely open" for what is actually a wide-open eye. Kept only for the phase-sweep UI shape; do not trust its margin numbers. |
+| `eye_fixed_grid.m` | MATLAB, zoomable: fixed-grid (no Symbol Sync) eye diagram, using the corrected **eye-opening** metric (weakest '1' − strongest '0'), plus a decision-sample histogram and the waveform with the header span shaded (`HEADER_START`/`HEADER_LEN`). The tool that established `sps=5.0` is correct and that seg010/seg007 have real but unopened eyes. |
+| `power_dip_locate.m` | MATLAB: coarse packet localization via RMS-power matched filter (same principle as `01a`/`01b`). Validated to ~1.5-1.9% of frame width on seg017/seg002 after a half-frame-width correction — good enough to point a search, not good enough to decide a decode. |
+| `header_correlate_locate.m` | MATLAB: fine packet localization via normalized cross-correlation against a 4-flags+14-byte-address template (ported from `01_frame_detection.py`). Precise to a few samples; caught seg010's power-dip location being off by more than a full frame width. |
+| `MATLAB_ANALYSIS.zh-TW.md` | Walkthrough of the three current MATLAB scripts above — what each block of code computes, the formulas behind it, and a glossary of the timing-recovery terminology. Chinese, like `PLOT_CAPTURE.zh-TW.md`. |
 
 ## Test 1: which bit order does AX.25 actually use on the wire?
 
@@ -297,14 +300,21 @@ floor, not for a peak.
 **Segments found so far** (30 s each; dip depth = the segment's noise-floor
 median minus its minimum, both in dB RMS):
 
-| Recording | Segment | Time range | Dip depth | Status |
+| Recording | Segment | Time range | Dip depth | Status (updated 2026-08-27, see sections below) |
 |---|---|---|---|---|
-| `20260720_220206_..._98266_x.cs16` | seg007 | 210-240s | ~12.2 dB | **Confirmed** — see below |
-| `20260723_091639_..._98266_x.cs16` | seg002 | 60-90s   | ~13.1 dB | Candidate |
-| `20260723_091639_..._98266_x.cs16` | seg010 | 300-330s | ~16.1 dB | Candidate |
-| `20260723_091639_..._98266_x.cs16` | seg017 | 510-540s | ~13.7 dB | **Confirmed** — see below |
-| `20260810_220940_..._69910_x.cs16` | seg004 | 120-150s | ~12.3 dB | Candidate |
-| `20260810_220940_..._69910_x.cs16` | seg018 | 540-570s | ~9.4 dB  | Candidate |
+| `20260720_220206_..._98266_x.cs16` | seg007 | 210-240s | ~12.2 dB | Location confirmed (header corr. z=8.1) — **not decoded, SNR-limited** |
+| `20260723_091639_..._98266_x.cs16` | seg002 | 60-90s   | ~13.1 dB | **Decoded** — fixed grid, no Symbol Sync needed |
+| `20260723_091639_..._98266_x.cs16` | seg010 | 300-330s | ~16.1 dB | Location confirmed (header corr. z=13.7, stronger than the decoded frames) — **not decoded, SNR-limited** |
+| `20260723_091639_..._98266_x.cs16` | seg017 | 510-540s | ~13.7 dB | **Decoded** — fixed grid, no Symbol Sync needed |
+| `20260810_220940_..._69910_x.cs16` | seg004 | 120-150s | ~12.3 dB | Candidate — not yet run through any of the tools below |
+| `20260810_220940_..._69910_x.cs16` | seg018 | 540-570s | ~9.4 dB  | Candidate — not yet run through any of the tools below |
+
+Note on "Status" here vs. earlier revisions of this table: this column originally
+tracked only "does a real power dip exist" (all six do). It now tracks the
+much stronger "has this been decoded" question, which is why seg007/seg010
+read as less resolved than their dip depth alone would suggest — a real,
+independently-confirmed packet location is not the same as a successful
+decode, see "Locating packets precisely" below for exactly that distinction.
 
 All six dips are comparable to or deeper than `cut_first3.ogg`'s known-good
 frames (~6-7 dB) — **consistent with real signal, not noise, across all three
@@ -325,9 +335,14 @@ against that same forced frame start, produces consistent-looking results
 separation looks clean) — more evidence of a real, roughly-aligned frame, not
 yet a full decode.
 
-**Update (2026-08-25)**: seg017 below is now a confirmed decode via the
-`Wav_TimingSync.grc` path; seg007's frame (paragraph above) hasn't been
-retried through it yet — see "Not yet done" at the end of the next section.
+**Update (2026-08-27)**: seg017 and seg002 are now confirmed decodes (see
+below) — and neither needed `Wav_TimingSync.grc`'s Symbol Sync path in the
+end; a plain fixed-rate grid decodes both. seg007's frame (paragraph above)
+and seg010 both have an independently-confirmed packet location now (via
+header cross-correlation, stronger signal evidence than the original power
+dip alone) but still do not decode — see "Locating packets precisely:
+power dip (coarse) + header correlation (fine)" further down for why that is
+a different, weaker claim than "decoded."
 
 ## seg017 decoded via `Wav_TimingSync.grc`'s Symbol Sync path (2026-08-25)
 
@@ -468,16 +483,23 @@ free-runs — so the number describes the loop's behaviour in noise, not the
 frame's symbol rate.
 
 Measured directly instead, by folding the confirmed frame into an eye
-diagram at several candidate rates and comparing how far the samples sit
-from the slicer threshold at the best vs. worst sampling phase:
+diagram at several candidate rates:
 
-| `sps` | best margin | eye openness (best/worst) |
-|---|---|---|
-| **5.00000** | 4.5887 | **1.094** |
-| 4.98 | 4.4589 | 1.022 |
-| 4.96 | 4.4306 | 1.010 |
-| 4.92336 (the whole-file average) | 4.4194 | 1.008 |
-| 4.90 | 4.4027 | 1.003 |
+| `sps` | eye opening (weakest '1' − strongest '0') |
+|---|---|
+| **5.00000** | **+5.04** |
+| 4.98 – 4.90 | ≤ 0 (no eye at all — the two bit clusters overlap) |
+
+(Eye **opening** = `min(samples sliced as 1) - max(samples sliced as 0)`;
+positive means every single decision in the frame sits on the correct side
+of the threshold with that much amplitude to spare — see
+`eye_fixed_grid.m` / `MATLAB_ANALYSIS.zh-TW.md` for the exact definition and
+why an earlier version of this analysis used a different, misleading
+"margin" number here: it averaged `|y - threshold|` over *all* 2202 symbols,
+~1880 of which are constant zero-run padding sitting far from the threshold
+regardless of sampling phase — so that average barely moved with phase and
+reported "eye is barely open" (ratio 1.094) for what a direct measurement
+shows is a wide-open eye. `eye_fixed_grid.m` replaced that metric entirely.)
 
 Only 5.000 produces an eye at all; everything else is flat, i.e. the
 sampling instants smear across the symbol period. **`sps = 5.0` stands**
@@ -485,27 +507,139 @@ sampling instants smear across the symbol period. **`sps = 5.0` stands**
 relative to the true symbol instants within a frame. Whatever stops `01`/`03`
 from decoding these recordings, it is not clock drift.
 
-The eye is nonetheless only modestly open (1.094), and the best sampling
-phase sits 2.0 samples away from where the tooling currently anchors the
-frame — worth ~6 % more decision margin. That offset is most likely an
-artefact of the anchor itself, which is derived from the discredited
-`avg_sps`; pinning the true frame start needs a cross-correlation of the now
-known-exactly 2202 on-wire bits against the waveform.
+### Fixed grid alone decodes seg017 *and* seg002 — Symbol Sync was unnecessary (seg017) or actively harmful (seg002)
 
-Two MATLAB helpers exist for looking at this by hand, both self-contained
-(constants pasted in at the top, `audioread` + `plot`, no Symbol Sync run):
-`plot_pickpoints_seg017.m` (zoomable version of the pick-point figure) and
-`tune_decision_points.m` (eye diagram + decision-margin-vs-phase curve, with
-`SPS_USE` / `PHASE_ADJ` knobs).
+Given the eye is wide open at a constant `sps=5.0`, the obvious next question
+is whether a Symbol Sync loop is even needed. Tested directly: slice the
+*entire* 30 s file on a plain uniform grid (`idx(n) = phase + 5.0*n`, no
+feedback, no adaptation at all — exactly `01`/`03`'s method), scanning
+`phase` across one full symbol period and both bit polarities, and check
+every candidate frame `offline_deframe()` finds for a 274-byte CRC pass.
 
-**Not yet done** (all straightforward with `symbol_sync_sweep.py` above,
-just not run yet): seg007's confirmed-but-undecoded frame (previous section)
-hasn't been retried through this Symbol Sync path; and the other
-CANDIDATE-only segments have been swept on the *coarse* 144-combo grid with
-zero passes (seg002/seg010, plus seg007 at 210-240s) but not on the finer
-grid that found 12 passes for seg017 — worth redoing before concluding they
-are undecodable. seg004/seg018 haven't been tried at all. Each just needs
-`python symbol_sync_sweep.py Output/<that segment>.wav`.
+**Result: both seg017 and seg002 decode this way, with a wide margin.**
+
+| Segment | fixed-grid decode phase window | width (% of one symbol) |
+|---|---|---|
+| seg017 | 1.4 – 4.7 | 67 % |
+| seg002 | 0.2 – 4.7 | 90 % |
+
+For seg002 this is a direct contradiction of the earlier `symbol_sync_sweep.py`
+result — **144 parameter combinations, zero CRC passes** — which means the
+Symbol Sync loop was not failing to help seg002, it was **actively destroying
+an already-decodable signal** by dragging the timing estimate away from the
+constant, correct `sps=5.0` it should have just left alone. This reframes the
+whole "how wide is the working window" finding two sections up: that 12/198
+scattered-pass pattern for seg017 was never about whether the *signal* could
+tolerate a working point — it was about how often the *loop's own drift*
+stayed close enough to the fixed answer that was correct the entire time.
+
+Practical consequence: **for any new segment, try a plain fixed-grid decode
+scan before reaching for `symbol_sync_sweep.py` at all.** It is simpler, has
+no TED_GARDNER-style hang risk, and two out of two segments tried so far
+needed nothing else.
+
+The best sampling phase for seg017's confirmed frame sits 2.0 samples away
+from where the tooling anchors the frame, worth ~6% more decision margin —
+most likely an artefact of the anchor position itself rather than a real
+phase error; see the next section for a much more precise way to pin frame
+starts down.
+
+## Locating packets precisely: power dip (coarse) + header correlation (fine) — 2026-08-27
+
+seg010 and seg007 have real, deep power dips (see the segment table at the
+top) but no decode, even after the discoveries above. The obvious question —
+is there really a packet at the location being tested? — turned out to have
+a genuinely wrong answer for seg010, caught only by cross-checking two
+independent localization methods against each other.
+
+### Stage 1 (coarse): power-dip matched filter — `power_dip_locate.m`
+
+Same principle as `01a`/`01b`: a real frame is an RMS-power **dip** (FM
+quieting), not a rise. `power_dip_locate.m` computes 20 ms-block RMS in dB,
+then runs a **matched filter** — a moving average over one frame-duration
+window (~229 ms, from the two confirmed frames' own span) — and takes the
+global minimum as the candidate location.
+
+Validated against seg017/seg002's already-known content-start position
+first: the raw dip-center location misses by **exactly ~half a frame
+width** in both cases (+5667 / +5715 samples) — expected, since a matched
+filter's minimum lands at the *center* of the boxcar window (flags + content
++ surrounding padding), not the content's start. Correcting for that half-
+frame offset brings both down to **+166 / +214 samples (1.5–1.9% of frame
+width)** — solid validation of the coarse method, but "solid" here still
+means potentially hundreds of samples off, nowhere near precise enough to
+decide whether a *specific* fixed phase decodes.
+
+Applied to seg010/seg007, the corrected candidate positions produced power
+dips **deeper than seg017/seg002's own confirmed dips** — strong evidence of
+a real signal, not noise — but a full fixed-grid CRC search around each
+(±2 frame-widths, all phases, both polarities) still found **zero passes**.
+
+### Stage 2 (fine): header cross-correlation — `header_correlate_locate.m`
+
+Ported from `01_frame_detection.py`'s `detect_frame_starts()`: build an NRZ
+template from the constant part of every frame — 4 leading HDLC flags
+(`0x7E`×4) + the 14-byte Dest+Src address — upsample by `sps`, and slide it
+across the waveform computing a **normalized cross-correlation z-score**.
+
+One deliberate change from the Python original: this MATLAB version
+zero-means *only the template*, not the window, before correlating (a
+Pearson-style correlation). Because a zero-mean template makes the window's
+own mean drop out of the numerator algebraically, this removes sensitivity
+to a DC offset in the window **without** a separate baseline-restoration
+pass — worth doing here because seg010 shows a visible DC step mid-segment
+(see `eye_fixed_grid.m`'s waveform panel). `01_frame_detection.py`'s original
+correlates raw dot products against already baseline-*restored* audio
+instead; the two approaches address the same DC-sensitivity issue by
+different means.
+
+Validated the same way: run it on seg017/seg002 first.
+
+| Segment | z-score | header peak (sample) | vs. known content-start |
+|---|---|---|---|
+| seg017 | 13.08 | 916252 | +161 samples (32.2 symbols) |
+| seg002 | 13.47 | 1159085 | +160 samples (**32.0 symbols, exact**) |
+
+32 symbols = 4 flags × 8 bits — the calibrated flags→content offset matches
+the protocol's own structure exactly, in both cases. This is a precise,
+theory-confirming localization, not just a plausible-looking peak.
+
+Applied to seg010/seg007 with that same 32.1-symbol calibrated offset:
+
+| Segment | z-score | header peak (sample) | vs. power-dip's coarse candidate |
+|---|---|---|---|
+| **seg010** | **13.71** (*stronger than either confirmed decode*) | 316927 | **7332 samples off** — over a full frame-width away |
+| seg007 | 8.12 (clearly above the ~5 noise floor, but weaker) | 1382708 | close |
+
+**seg010's coarse power-dip location was simply wrong** — off by more than
+one frame width, caught only because header correlation is precise enough
+to disagree with it sharply. Both header peaks are visually confirmable too:
+in `eye_fixed_grid.m`'s bottom-right panel (now with the header span shaded
+— see `HEADER_START`/`HEADER_LEN`), the waveform visibly narrows from
+wide/noisy to quiet **exactly** at the shaded header boundary, for all four
+segments including the two undecoded ones — independent, non-statistical
+confirmation that the header really is there.
+
+### Status at the corrected locations: real signal, still not decodable
+
+Re-running `eye_fixed_grid.m` at these header-correlation-corrected
+positions: the decision-sample histograms for seg010/seg007 now show
+**genuine two-cluster structure** (unlike the single unimodal noise blob
+seen at the earlier, wrong power-dip locations) — but heavily overlapping,
+with eye openings of only **+0.03 to +0.27** vs. seg017's +5.04. A fixed-grid
+CRC search at the corrected locations (± a few samples, both polarities)
+still finds **zero passes**.
+
+**Conclusion: seg010 and seg007 both have a real, precisely-located packet —
+this is now a genuine per-bit SNR problem, not a localization problem.**
+Whatever fixes this (if anything can), it is not "look in the right place"
+— that part is solved.
+
+**Not yet done**: whether an adaptive Symbol Sync loop (anchored at these
+*correct* locations, unlike the blind whole-file sweeps in
+`symbol_sync_sweep.py` that already failed) can claw back enough SNR to
+decode seg010/seg007 has not been tried. seg004/seg018 haven't been
+localized or tested with any of these tools at all.
 
 ## How to run
 

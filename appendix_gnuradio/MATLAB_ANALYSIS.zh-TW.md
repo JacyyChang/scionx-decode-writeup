@@ -1,8 +1,10 @@
-# MATLAB 取點分析說明
+# MATLAB 分析工具說明
 
-這份文件說明 `plot_pickpoints_seg017.m` 和 `tune_decision_points.m` 兩支 MATLAB 腳本：它們在算什麼、對應到什麼方法、公式是什麼，以及過程中用到的專有名詞。
+這份文件說明 `appendix_gnuradio/` 底下三支現行 MATLAB 分析工具：`eye_fixed_grid.m`、`power_dip_locate.m`、`header_correlate_locate.m`。它們在算什麼、對應到什麼方法、公式是什麼，以及過程中用到的專有名詞。
 
-寫這兩支的動機：Python 那邊（`symbol_sync_sweep.py`、`plot_pickpoints_comparison.py`）產出的是**靜態 PNG**，看到可疑的地方沒辦法放大。MATLAB 這兩支刻意寫得很單純——**不跑 Symbol Sync、不做 frame 偵測、不做 destuff**，該有的常數直接寫在檔案開頭，本體就只有 `audioread` + `plot`，所以可以隨便改、隨便縮放。
+> **2026-08-27 更新**：本文件先前涵蓋的 `tune_decision_points.m` 和 `plot_pickpoints_seg017.m` 已被 `eye_fixed_grid.m` 取代——前者的「margin」指標有嚴重瑕疵（見下方「被推翻的舊指標」），後者畫的「Symbol Sync 平均網格」也建立在已被推翻的 `avg_sps` 解讀上。兩支舊檔案還留著，但不要引用它們算出來的數字。
+
+寫這些工具的動機：Python 那邊（`symbol_sync_sweep.py`、`plot_pickpoints_comparison.py`）產出的是**靜態 PNG**，看到可疑的地方沒辦法放大，也沒辦法直接用 MATLAB 生態圈（Signal Processing Toolbox 等）快速檢驗。這幾支刻意寫得很單純——**不跑 GNU Radio Symbol Sync、不做複雜的框架**，該有的常數直接寫在檔案開頭，本體就是 `audioread` + 訊號處理 + `plot`，所以可以隨便改、隨便縮放。
 
 ---
 
@@ -12,21 +14,20 @@
 |---|---|
 | **符元 (symbol)** | 一次調變傳送的最小單位。這裡是 GFSK，一個符元帶 1 個 bit |
 | **sps (samples per symbol)** | 一個符元佔幾個取樣點。本專案 = 48000 Hz ÷ 9600 baud = **5.0** |
-| **符元時脈回復 (symbol timing recovery)** | 接收端不知道發射端的符元邊界在哪，要從訊號自己推出來。`symbol_sync_ff` 做的就是這件事 |
-| **TED (timing error detector)** | 時脈誤差偵測器。回復迴路的核心：判斷「現在取樣點是太早還太晚」。M&M = Mueller & Muller，是其中一種演算法 |
-| **loop_bw** | 迴路頻寬。大 = 反應快但抖；小 = 穩但追不上變化 |
-| **damping** | 阻尼係數。控制迴路收斂時會不會過衝震盪 |
-| **max_dev** | 允許迴路偏離名目 sps 的最大量（單位：取樣點） |
-| **ted_gain** | 告訴迴路「TED 的預期斜率」，用來把迴路係數正規化 |
+| **固定網格 (fixed grid)** | 假設 sps 恆定、不做任何回授修正的取樣方式：`idx(n) = s0 + sps*n`。跟 Symbol Sync 的差別在於它完全不追蹤時脈變化 |
 | **判決器 (slicer)** | 把類比值轉成 0/1。`binary_slicer_fb` 是**看正負號**，所以判決門檻 $\theta = 0$ |
 | **決策時刻 (decision instant)** | 每個符元實際被取樣、送進判決器的那個時間點 |
-| **取樣相位 (sampling phase)** | 決策時刻在符元週期內的位置。理想是落在「眼睛」正中央 |
+| **取樣相位 (sampling phase)** | 決策時刻在符元週期內的位置，範圍 $[0, \mathrm{sps})$ |
 | **眼圖 (eye diagram)** | 把每個符元週期疊在一起畫。中間張開的空洞叫「眼睛」，越開代表 0/1 越好分辨 |
-| **決策餘裕 (decision margin)** | 取樣值離判決門檻多遠。越遠 = 要翻轉這個 bit 需要越多雜訊 = 越穩 |
+| **眼圖開口 (eye opening)** | 本文件採用的正確指標：「最弱的 1」減「最強的 0」。正值代表所有決策都在門檻正確的一側 |
+| **RMS 功率凹陷 (power dip)** | 真實 GFSK 訊號出現時，FM 解調的接收機雜訊會被壓低（FM quieting），所以真訊號是功率**凹陷**、不是凸起 |
+| **匹配濾波器 (matched filter)** | 對功率曲線做「跟一個 frame 等寬的移動平均」，把單一取樣點的雜訊平滑掉，讓真正的凹陷區間更好辨識 |
+| **正規化互相關 (normalized cross-correlation)** | 拿一個已知樣板（波形片段）跟訊號逐點比對相似度，正規化到跟訊號振幅無關 |
+| **z-score** | 互相關係數除以它自己的標準差。真訊號的相關峰值會遠高於雜訊底噪（z 值差幾倍），藉此分辨「真的對上」還是「碰巧像」|
 | **HDLC flag** | `0x7E` = `01111110`，標記 frame 的頭尾 |
 | **bit stuffing** | HDLC 規定：資料中每出現連續 5 個 `1`，就強制插入一個 `0`，避免資料被誤認成 flag。所以**正常資料裡連續 1 絕不會超過 5 個** |
-| **destuff** | 接收端把那些插入的 `0` 拿掉，還原原始資料 |
-| **FCS / CRC-16/X.25** | frame 末尾的 2 bytes 檢查碼。對得上才算解碼成功 |
+| **DC 偏移 / DC 階躍** | 訊號的直流成分（平均值）偏離 0，或在某個時間點突然改變。會讓「原始點積相關」失準，見 `header_correlate_locate.m` 那節 |
+| **Pearson 相關** | 先把兩個序列都減掉各自的平均值再算相關，天生不受 DC 偏移影響 |
 | **polarity norm / inv** | FM 解調後 0/1 有可能整段相反，所以兩種極性都要試 |
 
 ---
@@ -35,17 +36,11 @@
 
 ### 索引從 0 還是從 1
 
-Python 算出來的取樣位置是 **0-based**（第一個樣本是 0），MATLAB 陣列是 **1-based**（第一個是 `y(1)`）。所以腳本裡定義：
+Python 算出來的取樣位置是 **0-based**（第一個樣本是 0），MATLAB 陣列是 **1-based**（第一個是 `y(1)`）。三支腳本都用 `t_idx = (0:numel(y)-1)'` 這種寫法讓內部運算維持 0-based 語意，跟 Python 端印出來的數字直接對得上，只有在真正要索引 `y(...)` 的地方才會 +1。
 
-```matlab
-t_idx = (0:numel(y)-1)';   % 0-based 位置，跟 Python 對齊
-```
+### 為什麼取樣位置要內插，不能四捨五入
 
-然後查值一律透過 `interp1(t_idx, y, pos)`，不要直接寫 `y(pos)`，否則整體會差一個樣本。
-
-### 為什麼用內插而不是四捨五入
-
-取樣位置是**小數**（例如 918610 + 5.0×n 在調整相位後會有小數）。如果直接取整數，等於自己引入了最多半個樣本的相位誤差——而相位誤差正是我們要量的東西，這樣就白量了。所以用線性內插：
+取樣位置常常是小數（例如相位 0.2、sps 4.9234 之類）。如果直接取整數，等於自己引入了最多半個樣本的相位誤差——而相位誤差正是我們要量的東西，這樣就白量了。所以一律用線性內插：
 
 $$y(p) \approx y(\lfloor p \rfloor) + (p - \lfloor p \rfloor)\bigl(y(\lfloor p \rfloor + 1) - y(\lfloor p \rfloor)\bigr)$$
 
@@ -53,73 +48,56 @@ $$y(p) \approx y(\lfloor p \rfloor) + (p - \lfloor p \rfloor)\bigl(y(\lfloor p \
 
 ---
 
-## `plot_pickpoints_seg017.m`：兩種取點方式的對照
+## 被推翻的舊指標（`tune_decision_points.m`，勿再使用）
 
-回答的問題是：**「01/03 那套固定網格」和「Symbol Sync」分別在哪裡取樣？**
+舊版工具算的是：
 
-### 兩條網格的公式
+$$M_{\text{舊}}(\varphi) = \frac{1}{N}\sum_{n=0}^{N-1} \bigl| y(s_0 + \varphi + \mathrm{SPS}\cdot n) - \theta \bigr|$$
 
-固定網格（`01`/`03` 的做法，直接照 sample clock 數）：
+也就是**全部符元的平均距離**。問題是 seg017 的 274-byte frame 裡有 1882 個符元是 zero-run padding（全部集中在 −4 附近），只有 320 個是真正變化的 header/telemetry bit。平均值被 padding 徹底主導，導致不管相位怎麼調，$M_{\text{舊}}$ 幾乎不動——算出來的「張開程度」是 1.094（幾乎全平），讓人誤以為眼圖「勉強張開」。
 
-$$\mathrm{idx}_{\text{fixed}}(n) = s_0 + \mathrm{SPS}\cdot n$$
-
-Symbol Sync 的平均網格：
-
-$$\mathrm{idx}_{\text{ss}}(n) = s_0 + \overline{\mathrm{sps}}\cdot n, \qquad \overline{\mathrm{sps}} = \frac{N_{\text{in}}}{N_{\text{out}}}$$
-
-其中 $N_{\text{in}}$ 是輸入樣本總數、$N_{\text{out}}$ 是迴路吐出的符元總數。兩條共用同一個起點 $s_0$。
-
-對應程式碼：
-
-```matlab
-avg_sps      = numel(y) / N_OUT_BITS;
-sample_start = BIT_START * avg_sps;
-idx_fixed    = sample_start + SPS_NOM * n;
-idx_symsync  = sample_start + avg_sps * n;
-drift        = idx_symsync - idx_fixed;
-```
-
-兩者的累積差距是線性的：
-
-$$d(n) = \mathrm{idx}_{\text{ss}}(n) - \mathrm{idx}_{\text{fixed}}(n) = (\overline{\mathrm{sps}} - \mathrm{SPS})\cdot n$$
-
-### ⚠️ 這支腳本畫出來的 drift 是假的
-
-`avg_sps` 是**整個 30 秒檔案的平均**，但這個檔案裡大約 29 秒是雜訊，迴路在雜訊區是自由亂跑的。所以這個數字描述的是「迴路在雜訊裡的行為」，**不是 frame 的真實符元率**。
-
-seg017 算出來是 4.9234，看起來像 1.5% 的時脈偏移、能畫出「累積漂移 168 個樣本」的驚人曲線——**這個解讀已經被推翻**（見下一節實測）。真實符元率就是 5.000，frame 內部**根本沒有漂移**。
-
-這支腳本現在的用途是「看取樣點落在哪」，**不要**把兩條網格的分離當成真實時脈漂移的證據。
+**實際上眼圖張得很開**（見下面 `eye_fixed_grid.m` 的正確結果）。教訓：**平均距離不是眼圖開口**，眼圖開口關心的是「最危險的那個決策」，不是「所有決策的平均」。
 
 ---
 
-## `tune_decision_points.m`：決策點好不好、能不能更好
+## `eye_fixed_grid.m`：正確的眼圖開口指標
 
-回答的問題是：**現在的決策時刻是不是取在眼睛正中央？可以更好嗎？**
+回答的問題是：**在固定 sps 網格（完全不跑 Symbol Sync）下，這個 frame 的眼睛開多大？在哪個相位最好？**
 
-### 決策餘裕的定義
+### 正確的開口定義
 
-判決器是看正負號，門檻 $\theta = 0$。所以每個決策時刻的「安全程度」就是它離 0 多遠。把整個 frame 平均起來，得到相位 $\varphi$ 的餘裕函數：
+判決器看正負號，門檻 $\theta = 0$。把某個相位 $\varphi$ 下的所有決策值分成兩群：
 
-$$M(\varphi) = \frac{1}{N}\sum_{n=0}^{N-1} \bigl| y(s_0 + \varphi + \mathrm{SPS}\cdot n) - \theta \bigr|$$
+$$\mathcal{H}(\varphi) = \{\, y(p) : y(p) > 0 \,\}, \qquad \mathcal{L}(\varphi) = \{\, y(p) : y(p) \le 0 \,\}, \qquad p = s_0+\varphi+\mathrm{SPS}\cdot n$$
 
-最佳相位就是讓它最大的那個：
+**眼圖開口**定義成：
 
-$$\varphi^{*} = \arg\max_{\varphi} M(\varphi)$$
+$$\mathrm{opening}(\varphi) = \min\bigl(\mathcal{H}(\varphi)\bigr) - \max\bigl(\mathcal{L}(\varphi)\bigr)$$
 
 對應程式碼：
 
 ```matlab
-ph_grid = linspace(-SPS_USE/2, SPS_USE/2, 201);   % 掃一整個符元週期
-for i = 1:numel(ph_grid)
-    margin(i) = mean(abs(sample_at(picks + ph_grid(i)) - THRESH), 'omitnan');
-end
-[best_margin, i_best] = max(margin);
+hi = v(v >  THRESH);
+lo = v(v <= THRESH);
+opening(i) = min(hi) - max(lo);
 ```
 
-掃描範圍取 $\pm\mathrm{SPS}/2$ 正好涵蓋一個完整符元週期（再多就開始重複了）。`'omitnan'` 是因為邊界外的內插會回傳 `NaN`，要跳過。
+這個指標只看「最弱的 1」跟「最強的 0」——也就是最容易被雜訊翻轉的那兩個決策——完全不受 padding 符元數量拖累。$\mathrm{opening}>0$ 代表**這個相位下沒有任何一個判決會翻轉**（若雜訊不再變大）。
 
-**注意這是穩健度的代理指標，不是誤碼率。** 餘裕變大代表「決策沒那麼勉強」，不代表某個特定 bit 真的改變了。
+最佳相位：
+
+$$\varphi^{*} = \arg\max_{\varphi} \mathrm{opening}(\varphi)$$
+
+掃描範圍取 $[0, \mathrm{SPS})$ 正好涵蓋一個完整符元週期。
+
+### 實測結果（seg017 確認解碼）
+
+| sps | 開口 |
+|---|---|
+| **5.00000** | **+5.04** |
+| 4.98 ~ 4.90 | ≤ 0（完全沒有眼圖）|
+
+只有 5.000 撐得出眼圖，證實 `sps=5.0` 是對的，而且 frame 內部沒有時脈漂移。
 
 ### 眼圖怎麼建
 
@@ -127,119 +105,132 @@ end
 
 $$E(k, \tau) = y(p_k + \tau), \qquad \tau \in [-\mathrm{SPS},\ +\mathrm{SPS}]$$
 
-$k$ 是第幾個符元，全部疊起來畫就是眼圖。
-
 ```matlab
-tau = linspace(-SPS_USE, SPS_USE, n_eye);
-eye = sample_at(picks + tau);     % picks 是 Nx1、tau 是 1xM -> 結果 NxM
+tau = linspace(-SPS, SPS, n_eye);
+eye = sample_at(picks + tau);     % picks 是 Nx1、tau 是 1xM -> 隱式擴展成 NxM
 ```
 
-這裡用到 MATLAB 的 **隱式擴展 (implicit expansion)**：一個直向量加一個橫向量，會自動展開成矩陣。等同於 `bsxfun(@plus, picks, tau)`，R2016b 以後可以直接寫 `+`。
+### 畫兩千多條線的技巧
 
-### 畫 2201 條線的技巧
-
-眼圖有 2201 條軌跡。如果用 `for` 迴圈呼叫 2201 次 `plot()` 會非常慢，而且圖例會爆掉。標準做法是**用 NaN 當分隔符，把全部軌跡串成單一個 line object**——MATLAB 遇到 `NaN` 會斷線，剛好達到「分段」的效果：
+用 **NaN 分隔符**把全部軌跡串成單一個 line object，避免迴圈呼叫 `plot()` 兩千多次：
 
 ```matlab
 Xe = [repmat(tau, N_SYMBOLS, 1), nan(N_SYMBOLS,1)]';
 Ye = [eye,                       nan(N_SYMBOLS,1)]';
-plot(Xe(:), Ye(:), 'Color', [0 0.447 0.741 0.06]);
+plot(Xe(:), Ye(:), 'Color', [0 0.447 0.741 0.05]);
 ```
 
-顏色用 4 個元素（RGB + alpha），透明度 0.06 讓密集的軌跡疊出濃淡，看得出哪裡是主流路徑。
+顏色第 4 個元素是透明度，讓密集軌跡疊出濃淡層次。
 
-### 眼圖張開程度
+### header 範圍標記
 
-用最佳與最差相位的餘裕比值來量化：
+`HEADER_START`/`HEADER_LEN` 兩個常數（來自 `header_correlate_locate.m` 的輸出）會在右下角波形圖上畫出黃色網底，標出「4 個 flag + 14-byte 位址」樣板實際比對到的位置。設 `HEADER_START = NaN` 可以關掉這個標記。
 
-$$R = \frac{\max_{\varphi} M(\varphi)}{\min_{\varphi} M(\varphi)}$$
-
-$R \approx 1$ 代表曲線是平的 = **根本沒有眼圖**（取樣點在符元週期裡糊掉了）；$R$ 明顯大於 1 才代表有可辨識的眼睛。
-
-> 註：`tune_decision_points.m` 本身印的是「目前餘裕 / 最佳餘裕 / 改善百分比」。上面這個 $R$ 值是另外用 Python 掃多個 sps 算的（下一節的表），腳本裡沒有直接印。
-
----
-
-## 實測結論
-
-### sps 確實是 5.000
-
-固定 seg017 已確認的 frame，用不同 sps 折眼圖比較張開程度：
-
-| `sps` | 最佳餘裕 | 張開程度 $R$ |
-|---|---|---|
-| **5.00000** | 4.5887 | **1.094** |
-| 4.98 | 4.4589 | 1.022 |
-| 4.96 | 4.4306 | 1.010 |
-| 4.92336（迴路全檔平均） | 4.4194 | 1.008 |
-| 4.90 | 4.4027 | 1.003 |
-
-**只有 5.000 撐得出眼圖**，其他值全部接近全平。所以：
-
-- `sps = 5.0`（= 48000/9600）成立
-- `01`/`03` 的固定網格在 frame 內部**沒有**相對漂移
-- 它們解不開這些錄音，原因**不是**時脈漂移
-
-### 眼圖只是勉強張開
-
-$R = 1.094$ 不算大。而且最佳相位跟目前錨點差 **−2.0 個樣本**，改過去餘裕多 6.4%。
-
-但這個 −2 很可能是**錨點本身算錯**造成的——`FRAME_START = 918610` 是用那個已被推翻的 `avg_sps = 4.92336` 推出來的。要真正釐清，得拿已知的 2202 個 on-wire bit 去跟波形做互相關，把 frame 起點精確定位。
-
----
-
-## 怎麼調整
-
-### `plot_pickpoints_seg017.m`
-
-檔案開頭的常數；換別的 frame 就改這些：
+### 怎麼調整
 
 | 常數 | 意義 |
 |---|---|
 | `WAV` | 音檔路徑 |
-| `N_OUT_BITS` | 該檔案 Symbol Sync 吐出的符元總數 |
-| `BIT_START` / `BIT_END` | frame 在符元流裡的起訖索引（含） |
-| `SPS_NOM` | 固定網格的間距，預設 5.0 |
+| `FRAME_START` | frame 內容起點（樣本索引，已含相位）|
+| `N_SYMBOLS` | frame 涵蓋的符元數 |
+| `SPS` | 固定網格間距，預設 5.0 |
+| `PHASE` | 在 `FRAME_START` 上再疊加的相位微調，預設 0 |
+| `POLARITY` | +1 或 −1，處理 FM 解調可能整段反相的情況 |
+| `DECODE_LABEL` | **手動填寫**，不是自動判斷——正開口不代表 HDLC flag 對得上、CRC 一定過，所以這個標籤要照實際解碼結果填 |
+| `HEADER_START` / `HEADER_LEN` | header 樣板的位置與長度（720 = 144 bits × SPS），來自 `header_correlate_locate.m` |
 
-這些數字由 Python 端印出來：
+---
 
-```bash
-python plot_pickpoints_comparison.py Output/<檔名>.wav \
-    --ted MM --loop-bw 0.045 --damping 0.7 --max-dev 1.5 --whole
+## `power_dip_locate.m`：粗定位（功率凹陷）
+
+回答的問題是：**在一段 30 秒的錄音裡，封包大概在哪裡？**
+
+### 方法
+
+1. 20ms 區塊算 RMS，轉 dB（跟 `view_segment.m` 同慣例）
+2. 用一個「跟真實 frame 等寬」的**匹配濾波器**（移動平均）平滑功率曲線——單一區塊的凹陷很容易被雜訊誤判，用等寬窗口平均可以把「一整段 frame 造成的持續凹陷」跟「單點雜訊」分開
+3. 取平滑後曲線的**全域最小值**當候選位置
+
+```matlab
+mf_len = round(FRAME_DUR_S * 1000 / WINDOW_MS);   % 換算成區塊數
+mf = movmean(rms_db, mf_len);
+[~, i_dip] = min(mf);
 ```
 
-輸出的 `bit range=[..., ...]` 和 `out of N total symbols` 就是要填的值。
+### ⚠️ 系統性偏差：抓到的是凹陷「中心」，不是內容「起點」
 
-### `tune_decision_points.m`
+匹配濾波器的最小值落在整個凹陷區間（flag + 內容 + 前後 padding）的**中心**，不是內容起點。用兩個已知答案驗證：兩邊都差了「約半個 frame 寬度」（+5667 / +5715 個 sample），修正這個系統性偏移後，誤差降到 frame 寬度的 1.5%~1.9%：
 
-兩個旋鈕：
+```matlab
+half_frame_samples = round(FRAME_DUR_S * fs / 2);
+cand_sample = dip_sample - half_frame_samples;
+```
 
-| 旋鈕 | 用途 |
-|---|---|
-| `SPS_USE` | 符元間距。預設 5.0；填 4.92336 可以重現「沒有眼圖」的對照 |
-| `PHASE_ADJ` | 把所有決策時刻平移幾個樣本。填 `-2.0` 可以看最佳相位的樣子 |
+**這個精度（frame 寬度的 1~2%，換算約 150~350 個 sample）只夠當粗定位**——不足以判斷某個固定相位到底解不解得開，這也是為什麼還需要下一支工具做精定位。seg010 的案例證實了這個限制：粗定位的候選位置後來被 header 互相關證明差了超過一個 frame 寬度。
 
-改完直接重跑（F5），圖會重畫並印出新的餘裕數字。
+---
+
+## `header_correlate_locate.m`：精定位（header 互相關）
+
+回答的問題是：**封包精確從哪一個 sample 開始？**
+
+移植自 `01_frame_detection/01_frame_detection.py` 的 `detect_frame_starts()`：用「4 個 flag（`0x7E`×4）+ 14-byte 目的/來源位址」建一個 NRZ 樣板（這段內容在同一顆衛星的每個 frame 裡都固定不變，不受 telemetry 內容影響），依 sps 放大，跟波形逐點算正規化互相關。
+
+### 跟 Python 原版的一個刻意差異：只讓樣板去均值
+
+Python 原版對「已經做過 baseline restoration（去 DC）」的訊號算原始點積相關。這支 MATLAB 版改成**只把樣板減掉平均值**（Pearson 相關的簡化版）：
+
+$$R(n) = \frac{\sum_k \bigl(y(n+k) - \theta_y\bigr)\bigl(t(k) - \bar t\bigr)}{\lVert t - \bar t\rVert \cdot \sqrt{\sum_k (y(n+k)-\theta_y)^2}}$$
+
+因為樣板 $t-\bar t$ 已經是零均值，$\sum_k (t(k)-\bar t) = 0$，所以視窗自己的均值 $\theta_y$ 在分子的交叉項裡會被消掉——不需要額外算視窗的滑動平均，只要讓樣板去均值就自動獲得對 DC 偏移不敏感的效果。程式碼：
+
+```matlab
+tmpl_c = template - mean(template);        % 只做這一次，重複使用
+num  = conv(yw, flipud(tmpl_c(:)), 'valid');           % 分子：不需要減視窗均值
+s1   = conv(yw,    ones(L,1), 'valid');                % 視窗滑動和（給分母用）
+s2   = conv(yw.^2, ones(L,1), 'valid');                % 視窗平方滑動和
+win_var_L = max(s2 - (s1.^2)/L, 0);                    % L * 視窗變異數
+R = num ./ (tmpl_norm * sqrt(win_var_L) + 1e-12);
+z = R / std(R);
+```
+
+會特別處理這件事，是因為 seg010 的波形中間有明顯的 DC 階躍（見 `eye_fixed_grid.m` 的波形圖）——原始點積相關對這種偏移敏感，Pearson 版天生免疫。
+
+### z-score 判斷真假
+
+$z = R / \mathrm{std}(R)$，真訊號的相關峰值遠高於雜訊底噪（本專案的經驗值：雜訊底噪 z<5，真訊號 z 落在 8~14 之間）。
+
+### 校準 flags→content 偏移量
+
+互相關的峰值位置對應「樣板的第一個樣本」，也就是**leading flags 的起點**，不是 frame 內容的起點。用兩個已知答案校準這個固定偏移量：
+
+$$\text{offset} = \text{已知內容起點} - \text{header 峰值位置}$$
+
+實測 seg017 = 161 samples（32.2 符元）、seg002 = 160 samples（**精確 32.0 符元**）——跟理論值「4 個 flag = 32 bits」完全吻合，是很紮實的驗證。校準出的平均偏移量（32.1 符元）可以直接套用到還沒解碼的段落上，把 header 峰值換算成內容起點的估計值。
+
+### 這支工具抓到的重大發現
+
+seg010 的 header 相關峰值 z=13.71（**比兩個已確認解碼的段落都強**），但位置跟 `power_dip_locate.m` 抓到的粗定位候選相差 **7332 個 sample**——超過一個 frame 寬度。這證實了粗定位法的精度上限，也解釋了為什麼一開始在錯誤位置量到的眼圖是純雜訊的單峰分布：**根本沒有看對地方**。換到 header 相關指出的正確位置後，眼圖才出現真正的（雖然重疊嚴重的）雙峰結構。
 
 ---
 
 ## 常見問題
 
-**Q: 圖上藍點橘點看起來完全重疊，是不是壞了？**
+**Q: 為什麼 `eye_fixed_grid.m` 的 `DECODE_LABEL` 要手動填，不能自動判斷？**
 
-在整段尺度下本來就會這樣（一萬多個樣本擠在一起）。要放大才看得出差異——這正是寫 MATLAB 版的原因。用工具列的放大鏡框選局部即可（腳本結尾已經 `zoom on`）。
+因為「這個相位下眼圖開口 > 0」不等於「HDLC flag 位置對得上、CRC 通過」。開口是必要條件，不是充分條件——有可能眼睛開了但 flag 定位錯誤導致解不出正確的 byte 邊界。所以工具刻意不用開口數字自動下結論，逼你去核對真正的解碼結果（用 `symbol_sync_sweep.py` 或手動跑 `offline_deframe`/CRC）。
 
-**Q: 為什麼兩個 panel 的縮放不連動？**
+**Q: `power_dip_locate.m` 抓到的位置跟 `header_correlate_locate.m` 差很多，該信哪個？**
 
-刻意不連動。上面 panel 的 x 軸是「樣本索引」，下面是「符元索引」，單位不同，連動只會互相干擾。（`plot_pickpoints_seg017.m` 裡有註解說明。）
+信 header 互相關的。功率凹陷法的物理原理（FM quieting）沒錯，但匹配濾波器的解析度受限於「frame 寬度」這個窗口大小，天生只能抓到大概位置；header 互相關是逐 sample 比對已知的固定 bit pattern，解析度高得多。實務上应该：先用功率凹陷法框出大概範圍（省得在整段 30 秒裡搜尋 header），再用 header 互相關在那個範圍內精確定位。
 
-**Q: 眼圖畫出來很糊，是腳本問題嗎？**
+**Q: 為什麼 `header_correlate_locate.m` 要限制搜尋範圍（`SEARCH_MARGIN`），不乾脆搜整個檔案？**
 
-不一定。這段訊號本身的眼圖就只有 $R = 1.094$，本來就不漂亮。先把 `SPS_USE` 設 5.0 確認是最清楚的版本，如果還是很糊，那就是訊號品質的極限，不是腳本的問題。
+技術上可以搜整個檔案，只是比較慢，而且如果訊號裡有其他碰巧像 header 的雜訊尖峰，範圍越大誤判機率越高。用功率凹陷法先框出大概範圍，再用 header 互相關精確定位，是刻意的兩階段設計。
 
 **Q: MATLAB 說 `audioread` 找不到檔案？**
 
-腳本裡用的是絕對路徑（跟 `view_segment.m` 一致）。如果搬過資料夾，改檔案開頭的 `WAV` 常數。
+三支腳本都用絕對路徑。如果搬過資料夾，改檔案開頭的 `WAV`（或 `segments` 結構裡每個 `file` 欄位）。
 
 ---
 
@@ -247,8 +238,10 @@ python plot_pickpoints_comparison.py Output/<檔名>.wav \
 
 | 檔案 | 說明 |
 |---|---|
-| `symbol_sync_sweep.py` | 掃 Symbol Sync 參數、離線評分找出可解碼的組合 |
-| `plot_pickpoints_comparison.py` | Python 版取點圖（靜態 PNG，`--whole` 看整段） |
-| `plot_pickpoints_seg017.m` | 本文說明的第一支：兩種取點對照，可縮放 |
-| `tune_decision_points.m` | 本文說明的第二支：眼圖 + 餘裕曲線 |
-| `README.md` | 完整的 seg017 解碼記錄、參數工作區間、以及被撤回的說法 |
+| `symbol_sync_sweep.py` | 掃 Symbol Sync 參數、離線評分找出可解碼的組合（本文件的三支 MATLAB 工具問世後，發現很多情況下根本不需要這支——先試固定網格）|
+| `plot_pickpoints_comparison.py` | Python 版取點圖，⚠️ 其漂移曲線建立在已被推翻的 `avg_sps` 解讀上，勿照字面採信 |
+| `eye_fixed_grid.m` | 本文說明的第一支：固定網格眼圖，正確的開口指標 |
+| `power_dip_locate.m` | 本文說明的第二支：功率凹陷粗定位 |
+| `header_correlate_locate.m` | 本文說明的第三支：header 互相關精定位 |
+| `plot_pickpoints_seg017.m` / `tune_decision_points.m` | ⚠️ 已被取代，見文件開頭 |
+| `README.md` | 完整的 seg017/seg002 解碼記錄、seg010/seg007 的定位與 SNR 現況、以及所有被撤回的說法 |
