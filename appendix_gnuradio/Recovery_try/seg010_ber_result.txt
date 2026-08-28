@@ -1,0 +1,11 @@
+D:\Research\3_SCIONX GNURadio\1_Share\appendix_gnuradio\Output\20260723_091639_seg010_300-330s.wav
+1440000 samples @ 48000 Hz
+
+274-byte candidates seen: 26   CRC passes: 0
+
+Best header match: 53 / 128 bits wrong  (41.4% header BER)
+  at {'sps': 4.9994, 'phase': 0.75, 'pol': 'norm', 'slicer': 'dyn8'}
+
+  header decoded:  20 bd 71 de 5a 12 19 ae 6e 08 25 94 f1 95 3c 76
+  header expected: 84 9c 60 86 aa 40 60 84 9c 60 a6 86 b0 e1 03 f0
+  byte diff:       ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^ ^^
