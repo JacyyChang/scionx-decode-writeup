@@ -94,8 +94,15 @@ Usage:
     # crop only, skip destuff (the old 05c_crop_wav_segment.py's job alone)
     python 05c_destuff_interactive.py Output/20260723_091639_48k.wav --seg 17 --crop-only
 
-Same CLI convention as 04c/04d otherwise. Output:
-`Output/<audio stem>_frame<N>_destuff_05c.xlsx`
+Same CLI convention as 04c/04d otherwise. Output (per detected frame, unless
+--crop-only): `Output/<audio stem>_frame<N>_destuff_05c.xlsx` (the workbook)
+and `Output/<audio stem>_frame<N>_destuff_05c_diagnostic.png` (added
+2026-08-31 -- waveform + the calibrated decision line (offset_thr) + every
+raw-bit decision point, colored confident-1/confident-0/LowConfidence, with
+background shading by structural segment matching the workbook's own
+SEG_FILLS colors -- a quick visual cross-check for where the uncertain bits
+actually are before going through RawBits row by row; see
+plot_decision_diagnostic()).
 """
 
 import argparse
@@ -117,6 +124,7 @@ sys.path.insert(0, HERE)
 
 from scionx import audio_io, baseline               # noqa: E402
 from scionx.hdlc import crc16_x25                    # noqa: E402
+from _style import setup_mpl, save, BLUE, ORANGE, GRAY  # noqa: E402
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -653,6 +661,84 @@ SEG_FILLS = {
     "mixed": PatternFill("solid", fgColor="FFFFF3B0"),
 }
 
+# same colors as SEG_FILLS above (their "FFrrggbb" ARGB hex, alpha byte
+# dropped) as plain matplotlib hex strings, so the PNG diagnostic plot's
+# segment shading matches the Excel workbook's row coloring exactly.
+SEG_COLORS_MPL = {k: "#" + v.fgColor.rgb[2:] for k, v in SEG_FILLS.items()}
+
+
+def _label_runs(labels):
+    """Group a list into (start, end, value) runs of consecutive equal
+    values (end exclusive) -- used to turn per-bit SegmentGuess labels into
+    a handful of axvspan() calls instead of one per bit."""
+    runs = []
+    i, n = 0, len(labels)
+    while i < n:
+        j = i
+        while j < n and labels[j] == labels[i]:
+            j += 1
+        runs.append((i, j, labels[i]))
+        i = j
+    return runs
+
+
+def plot_decision_diagnostic(wav_stem, frame_no, y, body_idx, y_at_bit,
+                              decided, ambiguous, seg_lbls, offset_thr,
+                              best_offset, best_mism, best_n):
+    """Waveform + decision line + per-bit decision points, colored by
+    confidence, with structural-segment background shading matching the
+    Excel workbook's own SEG_FILLS colors -- a quick visual cross-check for
+    "where are the uncertain bits, and do they look uncertain on the actual
+    waveform" before diving into RawBits row by row. Saved as
+    Output/<wav_stem>_frame<N>_destuff_05c_diagnostic.png.
+
+    offset_thr is the SAME calibrated fixed threshold decide_raw_bits()
+    actually decided with (see calibrate_offset_threshold) -- this is the
+    "決策線" (decision line): a bit is called 1 above it, 0 below/at it.
+    ambiguous[i] (LowConfidence in RawBits' C column) is exactly
+    abs(y_at_bit[i]-offset_thr) <= margin -- close enough to the line that
+    noise alone could plausibly have flipped the decision."""
+    plt = setup_mpl()
+    n = len(decided)
+    fig, ax = plt.subplots(figsize=(min(60, max(14, n / 80)), 5))
+
+    lo = max(0, int(body_idx[0]) - 20)
+    hi = min(len(y), int(body_idx[-1]) + 20)
+    ax.plot(np.arange(lo, hi), y[lo:hi], color=GRAY, linewidth=0.4, zorder=1)
+
+    for i0, i1, lbl in _label_runs(seg_lbls):
+        color = SEG_COLORS_MPL.get(lbl)
+        if color is None:
+            continue
+        ax.axvspan(body_idx[i0], body_idx[i1 - 1] + 1, color=color, alpha=0.35,
+                   zorder=0, linewidth=0)
+
+    ambiguous = np.asarray(ambiguous, dtype=bool)
+    decided = np.asarray(decided)
+    confident = ~ambiguous
+    hi_bits = confident & (decided == 1)
+    lo_bits = confident & (decided == 0)
+    ax.scatter(body_idx[hi_bits], y_at_bit[hi_bits], s=6, color=BLUE, zorder=3,
+               label="confident '1'")
+    ax.scatter(body_idx[lo_bits], y_at_bit[lo_bits], s=6, color="#333333", zorder=3,
+               label="confident '0'")
+    ax.scatter(body_idx[ambiguous], y_at_bit[ambiguous], s=26, facecolor=ORANGE,
+               edgecolor="#8B0000", linewidth=0.8, zorder=4,
+               label=f"LowConfidence ({int(ambiguous.sum())})")
+
+    ax.axhline(offset_thr, color="k", linestyle="--", linewidth=1,
+               label=f"decision line (offset_thr={offset_thr:.2f})")
+    ax.set_xlabel("sample index (absolute)")
+    ax.set_ylabel("amplitude")
+    ax.legend(loc="upper right", fontsize=7, ncol=4, framealpha=0.9)
+    ax.set_title(
+        f"{wav_stem}  frame#{frame_no}  --  decision line vs raw-bit samples\n"
+        f"{int(ambiguous.sum())} LowConfidence / {n} bits  --  "
+        f"best_offset={best_offset:+d} (mismatch {best_mism}/{best_n} at verifiable positions)",
+        fontsize=9)
+    return save(fig, os.path.join("Output", f"{wav_stem}_frame{frame_no}_destuff_05c_diagnostic.png"))
+
+
 
 def write_instructions(wb, frame_no, n_raw, best_offset, n_verifiable_bits, n_telemetry_bits):
     ws = wb.create_sheet("使用說明")
@@ -715,6 +801,12 @@ def write_instructions(wb, frame_no, n_raw, best_offset, n_verifiable_bits, n_te
         f"目前資料最佳對齊為 offset={best_offset:+d}"
         "（REFERENCE_FRAME.md 的『Correction』一節說 frame#2 應該是 offset=0；"
         "這裡是重新算一次，不是照抄那個結論）。",
+        "",
+        "同一個資料夾裡還有一張搭配用的圖：`<檔名去掉 .xlsx>_diagnostic.png`——"
+        "波形＋決策線（offset_thr）＋每個原始判決點，藍點=信心'1'、黑點=信心'0'、"
+        "橘紅點=LowConfidence（跟本分頁 C 欄同一批），背景色跟本分頁的 SegmentGuess "
+        "區段上色一致。開始逐列檢查前，先看這張圖抓一下低信心 bit 大概群聚在哪個"
+        "區段，會比從頭捲到尾快。",
         "",
         "分頁說明：",
         "1. RawBits：每一列一個原始判決 bit。"
@@ -1234,7 +1326,16 @@ def build_workbook(out_path, frame_no, y, yc, start):
 
     n_core = len(REF_STUFFED)               # payload+FCS raw bits, incl. real stuff bits
     n_raw = min(len(y_at_bit) - max(best_offset, 0), n_core + TRAIL_EXTRA)
-    decided, ambiguous, _ = decide_raw_bits(y_at_bit, yc_at_bit, offset_thr, margin, best_offset, n_raw)
+    decided, ambiguous, seg_lbls = decide_raw_bits(y_at_bit, yc_at_bit, offset_thr, margin, best_offset, n_raw)
+
+    stem = os.path.splitext(os.path.basename(out_path))[0]
+    # strip the "_frame<N>_destuff_05c" tag main() appended to build out_path,
+    # since plot_decision_diagnostic() re-adds its own "_frame<N>_..." suffix
+    stem = re.sub(rf"_frame{frame_no}_destuff_05c$", "", stem)
+    png_path = plot_decision_diagnostic(
+        stem, frame_no, y, body_idx[:n_raw], y_at_bit[:n_raw],
+        decided, ambiguous, seg_lbls, offset_thr, best_offset, best_mism, best_n)
+    print(f"Diagnostic plot saved: {png_path}")
 
     fields = load_beacon_fields(XLSX_PATH)
     with open(ENUMS_PATH, "r", encoding="utf-8") as fh:
