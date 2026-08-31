@@ -64,14 +64,21 @@ z-score 曲線，直接從圖上讀出合適的門檻；兩支腳本都可以用
 覆寫，建議的流程是先用 `04a` 畫圖，再用 `04_beacon_field_decode.py` 解碼。
 細節跟範例輸出見 [`04_Beacon/README.md`](04_Beacon/README.md)。
 
-## GNU Radio 測試（`appendix_gnuradio/`）
+## 調查新錄音（`05_GNURadio_Czechia/`）
 
-[`appendix_gnuradio/`](appendix_gnuradio/) 是測試用資料夾，不是診斷用的：
-它建構出正確答案已知的訊號，餵進真正的 GNU Radio block，檢驗這個 repo 其他
-部分所依賴的假設。**這裡需要 GNU Radio**（這正是它存在的目的）——這個資料夾
-以外的部分都刻意維持依賴很少。第一個測試要確認的是 AX.25 在傳輸線上用的是
-哪種 bit 順序，做法是把一個已知的 frame 分別用兩種順序序列化，餵進
-gr-satellites 的 `HDLC Deframer`，看哪一種能通過 FCS。
+[`05_GNURadio_Czechia/`](05_GNURadio_Czechia/) 把這個專案的解碼方法套用到
+另一批不同來源的錄音（一位捷克同事提供的原始 IQ 錄音，不是 SatNOGS 下載的
+`.ogg`），走一套乾淨、有編號的三步驟 pipeline：**05a** 把原始 IQ 錄音解調
+成 `.wav`（需要 GNU Radio——整條 pipeline 裡唯一需要的一步）、**05b** 對
+整份錄音做交叉相關找出候選幀，依 30 秒區塊跟極性分組，嘗試自動
+CRC-16/X.25 解碼、**05c** 裁切某個區段，對 **05b** 沒能自動解出來的部分開啟
+互動式手動解幀工作簿。完整 pipeline 跟已驗證的結果見
+[`05_GNURadio_Czechia/README.md`](05_GNURadio_Czechia/README.md)。
+
+這個資料夾自己的調查歷程（GNU Radio Symbol Sync 實驗、header 相關性定位、
+前饋式時脈音 timing-recovery 嘗試）原本放在 `appendix_gnuradio/`，現在已經
+被上面這套 pipeline 取代、從這個分支移除；完整內容保留在
+`archive/appendix_gnuradio` 分支上。
 
 ## 怎麼跑
 
@@ -131,17 +138,13 @@ python 01_frame_detection.py    # 換成你想跑的腳本
   CRC-16/X.25 對得上——也就是說，大部分 bit 都是**很有信心**地被判決出來的，
   只是不代表判得**正確**。單看判決信心低不夠解釋為什麼 CRC 一直過不了。
   見 [`04_Beacon/README.md`](04_Beacon/README.md)。
-
-## 之後可能的方向
-
-- ~~換成 GNU Radio 內建的 `symbol_sync` 來找 bit~~ —— **已經試過**，見
-  `03_data_segment_processing/03c_symbol_sync_timing.py`。在 frame#1 上掃過
-  125 組 TED/loop-bandwidth/前端濾波器的組合，最佳設定（Gardner、
-  loop_bw=0.08、0.75 倍 symbol rate 的低通前端）把 header bit error 數從
-  目前固定相位方法的 5/144 降到 2/144，眼圖也明顯更乾淨——但 CRC 還是過不了。
-  真正的 timing recovery 確實比固定相位取樣好，只是單靠它還不足以解釋
-  「0 個 frame 過 CRC」這個結果。
-- **利用 frame 本身的資訊來確認/修正 bit 的正確性**：目前每個 bit 都是
-  獨立判決的，只用單一固定閾值；這可以改成利用協定裡已知的固定結構
-  （header/address/CRC 這些有已知答案的部分）當錨點，交叉驗證或糾錯 data
-  段落，而不是每個 bit 各自獨立判決。
+- **另一批不同來源的錄音（`05_GNURadio_Czechia/`）端對端解出了兩個真實的
+  frame，而且完全沒有手動指定任何座標。** 對一份完整、沒裁切過的
+  771 秒／3700 萬個 sample 錄音跑這套 pipeline，定位＋解碼那一步純粹靠波形
+  交叉相關就找到並 CRC 解出兩個幀（header 跟 `REFERENCE_FRAME.md` 逐 byte
+  吻合，callsign 正確）——沒有手動提供任何位置或時序參數。另一個 header
+  相關性一樣強的候選還是解不出來：先前自動化的相位／極性搜尋量出 41% 的
+  原始位元錯誤率，這個專案的手動、逐 bit 互動工具（逐幀校準門檻 + PHASE
+  微調掃描）把這個數字壓到 2.9%——確實有進步，但離 AX.25 這種沒有前向糾錯
+  的 CRC 需要的「幾乎零位元錯誤」還有距離。見
+  [`05_GNURadio_Czechia/README.zh-TW.md`](05_GNURadio_Czechia/README.zh-TW.md#已驗證的具體發現)。

@@ -73,15 +73,25 @@ scripts take a `--z-threshold` override, and the recommended workflow is to
 plot with `04a` first, then decode with `04_beacon_field_decode.py`. See
 [`04_Beacon/README.md`](04_Beacon/README.md) for details and example output.
 
-## GNU Radio tests (`appendix_gnuradio/`)
+## Investigating new recordings (`05_GNURadio_Czechia/`)
 
-[`appendix_gnuradio/`](appendix_gnuradio/) is a testing folder rather than a
-diagnostic one: it builds signals whose correct answer is known in advance and
-runs them through real GNU Radio blocks, to check assumptions the rest of the
-repo relies on. **GNU Radio is required here** (that's the point) -- everything
-outside this folder stays dependency-light. The first test settles which bit
-order AX.25 uses on the wire, by feeding one known frame into gr-satellites'
-`HDLC Deframer` serialized both ways and seeing which one passes FCS.
+[`05_GNURadio_Czechia/`](05_GNURadio_Czechia/) applies this project's decode
+approach to a separate batch of recordings from a different source (raw IQ
+captures shared by a Czech colleague, not SatNOGS `.ogg` downloads), through
+a clean, numbered three-step pipeline: **05a** decodes the raw IQ capture to
+a `.wav` (needs GNU Radio -- the only step that does), **05b** cross-
+correlates the whole recording for candidate frames and attempts an
+automated CRC-16/X.25 decode grouped by 30-second segment and polarity, and
+**05c** crops a segment and opens an interactive manual destuffing workbook
+for whatever **05b** couldn't decode automatically. See
+[`05_GNURadio_Czechia/README.md`](05_GNURadio_Czechia/README.md) for the
+full pipeline and validated results.
+
+This folder's own investigation history (GNU Radio Symbol Sync experiments,
+header-correlation localization, a feedforward clock-tone timing-recovery
+attempt) previously lived in `appendix_gnuradio/`, which has since been
+superseded by the pipeline above and removed from this branch; it's
+preserved in full on the `archive/appendix_gnuradio` branch.
 
 ## How to run
 
@@ -157,20 +167,16 @@ automatically, with no need to copy it separately.
   computed CRC-16/X.25 of its payload -- i.e. most of each frame is being
   decided *confidently*, just not all of it *correctly*. See
   [`04_Beacon/README.md`](04_Beacon/README.md).
-
-## Possible future updates
-
-- ~~Switch to GNU Radio's built-in `symbol_sync` to find bits~~ -- **tried**,
-  see `03_data_segment_processing/03c_symbol_sync_timing.py`. Sweeping 125
-  TED/loop-bandwidth/front-end-filter combinations on frame#1, the best
-  config (Gardner, loop_bw=0.08, 0.75x-symbol-rate low-pass front end)
-  lowered the header bit-error count from 5/144 (current fixed-phase method)
-  to 2/144, with a visibly cleaner eye diagram -- but CRC still fails. Real
-  timing recovery is a genuine improvement over fixed-phase sampling, just
-  not by itself enough to explain the 0-frames-pass-CRC result.
-- **Use frame information to confirm/correct bit correctness**: right now
-  every bit is decided independently, using only a single fixed threshold;
-  this could be changed to use known structure (the parts of the
-  protocol -- header/address/CRC -- that are fixed and have known answers)
-  as anchors, cross-validating or error-correcting the data segments instead
-  of deciding each bit in isolation.
+- **A separate batch of recordings (`05_GNURadio_Czechia/`) decodes two real
+  frames end to end, with zero hand-supplied coordinates.** Run against a
+  full, un-cropped 771s/37M-sample recording, the pipeline's locate+decode
+  step found and CRC-decoded two frames purely from waveform
+  cross-correlation (header byte-identical to `REFERENCE_FRAME.md`, correct
+  callsigns) -- no location or timing parameters supplied by hand. A third
+  candidate with comparably strong header correlation still doesn't decode:
+  an earlier automated phase/polarity search found a 41% raw bit-error rate
+  for it, and this project's manual, per-bit interactive tool (calibrated
+  per-frame threshold + phase micro-sweep) brought that down to 2.9% -- real
+  progress, but still short of the near-zero bit-error rate AX.25's uncoded
+  CRC needs. See
+  [`05_GNURadio_Czechia/README.md`](05_GNURadio_Czechia/README.md#key-findings).
