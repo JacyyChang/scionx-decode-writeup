@@ -20,9 +20,14 @@ Thumbs.db
 # --- Office lock files ---
 ~$*.xlsx
 
-# --- Claude Code working notes (not for publishing) ---
+# --- Claude Code working notes (not for publishing) -- except explicit
+#     allow-listed files meant to be shared/published. Deliberately allow-
+#     listed by exact filename, not *.pdf: doc/訊號異常比對報告.pdf contains
+#     a real third-party colleague's name (checked 2026-08-31, not yet
+#     redacted) and must NOT be added here until that's resolved. ---
 CLAUDE.md
-doc/
+doc/*
+!doc/操作篇.pdf
 
 # --- GRC build artifacts: grcc/GRC-GUI generate these from a .grc, don't track them ---
 appendix_gnuradio/hdlc_bitorder_test.py
