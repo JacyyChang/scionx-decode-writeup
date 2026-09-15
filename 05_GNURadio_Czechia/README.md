@@ -135,6 +135,35 @@ anything else that wants a small per-segment file, not this tool).
   of which cached block definition GRC used to generate the `.py`. If
   `gr_plot_capture.py`/`gr_plot_sink.py` ever move again, update the shim,
   not `plot_capture.block.yml`.
+- **`Missing Block  key: plot_capture` in the GRC canvas? GRC read the WRONG
+  `config.conf`.** For GRC to *show* the block at all, its `local_blocks_path`
+  must point at this folder's `grc_blocks/`. That setting lives in a per-user
+  `config.conf`, and GNU Radio picks the directory to read it from off `$HOME`
+  — **but only when `HOME` is set.** Launching `gnuradio-companion` from a
+  radioconda / `cmd` shell (no `HOME`) makes GNU Radio fall back to
+  `%APPDATA%\.gnuradio\config.conf`
+  (`C:\Users\<you>\AppData\Roaming\.gnuradio\config.conf`) — a *different* file
+  from the `~/.gnuradio\config.conf` a Git-Bash/WSL shell (which *does* set
+  `HOME`) reads. Update only one and the block goes missing under the other
+  launch method — exactly what bit this repo when `appendix_gnuradio/` was
+  renamed to `05_GNURadio_Czechia/`: only the `HOME` copy's path was fixed, so
+  the GUI (launched without `HOME`) kept reading the stale, now-deleted
+  `appendix_gnuradio\grc_blocks` path and dropped the block. Fix — set
+  `local_blocks_path` to the **absolute path of this folder's `grc_blocks/`**,
+  and do it in *both* config files by running the API once from each launch
+  environment (so GNU Radio writes to whichever file that environment
+  resolves):
+  ```python
+  from gnuradio import gr
+  p = gr.prefs()
+  p.set_string('grc', 'local_blocks_path', r'<abs path to>\05_GNURadio_Czechia\grc_blocks')
+  p.save()
+  ```
+  Never hand-edit the `.conf` (openpyxl-style round-trips aside, GNU Radio owns
+  the file); the API writes to the correct resolved path. GRC only reads
+  `local_blocks_path` at **startup**, so fully quit and relaunch afterwards. A
+  fresh clone that has never set `local_blocks_path` will show the block as
+  missing too, until you run the snippet above once.
 - **`05a_IQtoOgg_plot.grc`'s own `id` can't carry the `05a` prefix** (it
   becomes the generated `.py`'s class name — and Python identifiers can't
   start with a digit), so GRC always writes `IQtoOgg_plot.py`; rename it to

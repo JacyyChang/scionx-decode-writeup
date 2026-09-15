@@ -122,6 +122,31 @@ per-segment 檔案、但不需要這個工具的場合用）。
   `.py` 時用的是哪個版本的快取 block 定義都能動。如果
   `gr_plot_capture.py`/`gr_plot_sink.py` 以後又搬家，要改的是這個轉接檔，
   不是 `plot_capture.block.yml`。
+- **GRC 畫布上出現 `Missing Block  key: plot_capture`？是 GRC 讀錯了
+  `config.conf`。** 要讓 GRC 能*顯示*這個 block，它的 `local_blocks_path`
+  必須指向這個資料夾底下的 `grc_blocks/`。這個設定存在每個使用者的
+  `config.conf`，而 GNU Radio 用 `$HOME` 決定去哪個目錄找它——**但只有在有設
+  `HOME` 時**。從 radioconda / `cmd` 視窗啟動 `gnuradio-companion`（沒有
+  `HOME`）時，GNU Radio 會退回去讀 `%APPDATA%\.gnuradio\config.conf`
+  （`C:\Users\<你>\AppData\Roaming\.gnuradio\config.conf`），跟 Git-Bash/WSL
+  （*有*設 `HOME`）讀的 `~/.gnuradio\config.conf` 是**不同一個檔**。只更新其中
+  一份，另一種啟動方式下 block 就會變 missing——這正是本 repo 把
+  `appendix_gnuradio/` 改名成 `05_GNURadio_Czechia/` 時踩到的坑：只修了有
+  `HOME` 那份的路徑，於是 GUI（無 `HOME` 啟動）一直讀到舊的、早已刪除的
+  `appendix_gnuradio\grc_blocks` 路徑，就把 block 丟掉了。修法——把
+  `local_blocks_path` 設成**這個資料夾底下 `grc_blocks/` 的絕對路徑**，而且
+  **兩份都要設**：在每個啟動環境各跑一次下面的 API（GNU Radio 會寫到那個環境
+  解析到的那個檔）：
+  ```python
+  from gnuradio import gr
+  p = gr.prefs()
+  p.set_string('grc', 'local_blocks_path', r'<絕對路徑>\05_GNURadio_Czechia\grc_blocks')
+  p.save()
+  ```
+  不要手動去改 `.conf`（那個檔是 GNU Radio 在管的）；用 API 才會寫到正確解析出
+  的路徑。GRC 只在**啟動時**讀一次 `local_blocks_path`，所以改完要完整關閉再重開。
+  全新 clone、從沒設過 `local_blocks_path` 的人也會看到這個 block 是 missing，
+  直到照上面跑一次為止。
 - **`05a_IQtoOgg_plot.grc` 自己的 `id` 不能帶 `05a` 前綴**（它會變成產生出來
   的 `.py` 裡的 class 名稱——而 Python 識別字不能以數字開頭），所以 GRC
   永遠只會寫出 `IQtoOgg_plot.py`；重新產生後要自己手動改名成
