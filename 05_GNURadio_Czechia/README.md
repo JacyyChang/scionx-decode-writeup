@@ -36,6 +36,9 @@ grc_blocks/                  gr_plot_capture.py, gr_plot_sink.py (Step 1's plott
 gr_plot_capture.py           2-line shim so 05a's plain `import gr_plot_capture`
                               works regardless of GRC's own block-definition caching
                               (see Gotchas)
+GRC_SETUP.md / .zh-TW.md     one-time local setup for OPENING 05a in the GRC GUI
+                              (registering the custom Plot Capture block); not
+                              needed just to run the .py
 Data/   *.cs16 raw IQ captures (Step 1 input)
 Figure/ periodic spectrogram PNGs (Step 1 output, one per 30s block)
 Output/ wav / xlsx / fig / png (everything downstream of Step 1)
@@ -48,6 +51,10 @@ Output/ wav / xlsx / fig / png (everything downstream of Step 1)
 Edit `cs16_path` at the top of `05a_IQtoOgg_plot.grc` (or the variable of
 the same name in `05a_IQtoOgg_plot.py` if running the `.py` directly) to
 point at the recording, then run it:
+
+> To **open/edit** the `.grc` in `gnuradio-companion` (rather than just run the
+> `.py`), do the one-time [`GRC_SETUP.md`](GRC_SETUP.md) first, or the custom
+> `Plot Capture` block shows up as a Missing Block.
 
 ```bash
 C:\Users\USER\radioconda\python.exe -u 05a_IQtoOgg_plot.py
@@ -135,8 +142,17 @@ anything else that wants a small per-segment file, not this tool).
   of which cached block definition GRC used to generate the `.py`. If
   `gr_plot_capture.py`/`gr_plot_sink.py` ever move again, update the shim,
   not `plot_capture.block.yml`.
+- **Editing `05a` in the GUI needs a one-time local setup;
+  [`GRC_SETUP.md`](GRC_SETUP.md) is the full walkthrough.** The `Plot Capture`
+  block is custom, so GRC only *shows* it if `local_blocks_path` points at this
+  folder's `grc_blocks/` — a per-machine setting that does **not** travel with
+  `git`. Note the split: **running** the flowgraph (`python
+  05a_IQtoOgg_plot.py`) needs none of this — the shim handles the import — so
+  only people **opening the `.grc` in `gnuradio-companion`** hit the Missing
+  Block and need the setup.
 - **`Missing Block  key: plot_capture` in the GRC canvas? GRC read the WRONG
-  `config.conf`.** For GRC to *show* the block at all, its `local_blocks_path`
+  `config.conf`.** (Deep-dive; see [`GRC_SETUP.md`](GRC_SETUP.md) §4 for the
+  step-by-step.) For GRC to *show* the block at all, its `local_blocks_path`
   must point at this folder's `grc_blocks/`. That setting lives in a per-user
   `config.conf`, and GNU Radio picks the directory to read it from off `$HOME`
   — **but only when `HOME` is set.** Launching `gnuradio-companion` from a

@@ -34,6 +34,8 @@ grc_blocks/                  gr_plot_capture.py、gr_plot_sink.py（Step 1
 gr_plot_capture.py           2 行轉接檔，讓 05a 裡單純的 `import
                               gr_plot_capture` 不管 GRC 自己的 block 定義
                               快取狀態如何都能動（見 Gotchas）
+GRC_SETUP.md / .zh-TW.md     在 GRC GUI 裡「打開」05a 的一次性本地設定（註冊
+                              客製 Plot Capture block）；只跑 .py 不需要
 Data/   *.cs16 原始 IQ 錄音（Step 1 輸入）
 Figure/ 週期性頻譜圖 PNG（Step 1 輸出，每 30 秒一張）
 Output/ wav / xlsx / fig / png（Step 1 之後所有下游產出）
@@ -45,6 +47,10 @@ Output/ wav / xlsx / fig / png（Step 1 之後所有下游產出）
 
 改 `05a_IQtoOgg_plot.grc` 最上面的 `cs16_path`（直接跑 `.py` 的話改
 `05a_IQtoOgg_plot.py` 裡同名變數）指向要處理的錄音，然後執行：
+
+> 若要在 `gnuradio-companion` 裡**打開/編輯** `.grc`（而不只是跑 `.py`），請先
+> 做一次性的 [`GRC_SETUP.zh-TW.md`](GRC_SETUP.zh-TW.md)，否則客製的 `Plot
+> Capture` block 會顯示成 Missing Block。
 
 ```bash
 C:\Users\USER\radioconda\python.exe -u 05a_IQtoOgg_plot.py
@@ -122,8 +128,16 @@ per-segment 檔案、但不需要這個工具的場合用）。
   `.py` 時用的是哪個版本的快取 block 定義都能動。如果
   `gr_plot_capture.py`/`gr_plot_sink.py` 以後又搬家，要改的是這個轉接檔，
   不是 `plot_capture.block.yml`。
+- **在 GUI 裡編輯 `05a` 需要一次性的本地設定；完整步驟見
+  [`GRC_SETUP.zh-TW.md`](GRC_SETUP.zh-TW.md)。** `Plot Capture` 是客製 block，
+  所以 GRC 只有在 `local_blocks_path` 指向這個資料夾底下的 `grc_blocks/` 時才會
+  *顯示*它——而這是每台機器各自的設定，**不會**跟著 `git` 走。注意這個區分：
+  **執行**流程圖（`python 05a_IQtoOgg_plot.py`）完全不需要這個——import 由 shim
+  處理——所以只有**在 `gnuradio-companion` 裡打開 `.grc`** 的人才會碰到 Missing
+  Block、才需要做這個設定。
 - **GRC 畫布上出現 `Missing Block  key: plot_capture`？是 GRC 讀錯了
-  `config.conf`。** 要讓 GRC 能*顯示*這個 block，它的 `local_blocks_path`
+  `config.conf`。**（深入細節；逐步操作見 [`GRC_SETUP.zh-TW.md`](GRC_SETUP.zh-TW.md)
+  §4。）要讓 GRC 能*顯示*這個 block，它的 `local_blocks_path`
   必須指向這個資料夾底下的 `grc_blocks/`。這個設定存在每個使用者的
   `config.conf`，而 GNU Radio 用 `$HOME` 決定去哪個目錄找它——**但只有在有設
   `HOME` 時**。從 radioconda / `cmd` 視窗啟動 `gnuradio-companion`（沒有
